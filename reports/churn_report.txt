@@ -1,0 +1,57 @@
+
+CHURN PREDICTION MODEL REPORT
+E-Commerce Analytics — Phase 8
+============================================================
+
+BEST MODEL: Gradient Boosting
+─────────────────────────────────────────────────────────
+Accuracy:         0.7624
+Precision:        0.7737
+Recall:           0.9386
+F1 Score:         0.8482
+ROC-AUC:          0.8019
+CV ROC-AUC:       0.8009 (+/- 0.0045)
+
+MODEL COMPARISON
+─────────────────────────────────────────────────────────
+              model  accuracy  precision  recall     f1  roc_auc
+  Gradient Boosting    0.7624     0.7737  0.9386 0.8482   0.8019
+      Random Forest    0.6579     0.8184  0.6634 0.7328   0.7241
+Logistic Regression    0.4820     0.7362  0.4167 0.5322   0.5565
+
+CHURN RISK SEGMENTATION
+─────────────────────────────────────────────────────────
+High-risk customers:   62,072
+  Avg CLV:             R$ 28.58
+  Avg revenue:         R$ 135.97
+  Revenue at risk:     R$ 8,439,741.09
+
+TOP PREDICTIVE FEATURES
+─────────────────────────────────────────────────────────
+  1. avg_freight
+  2. avg_delivery_delay
+  3. avg_review_score
+  4. total_late_deliveries
+  5. avg_installments
+
+BUSINESS RECOMMENDATIONS
+─────────────────────────────────────────────────────────
+1. IMMEDIATE ACTION — Contact the 62,072 high-risk customers
+   with personalised win-back offers. Revenue at risk:
+   R$ 8,439,741
+
+2. EARLY WARNING — Monitor recency_days as the leading
+   indicator. Customers crossing 90 days inactive should
+   trigger an automated re-engagement email.
+
+3. REVIEW SCORE — Low review scores are a strong churn
+   predictor. A dedicated post-delivery satisfaction
+   intervention can recover at-risk customers early.
+
+4. DISCOUNT SENSITIVITY — Discount-heavy customers churn
+   faster when discounts stop. Wean these customers onto
+   value-based loyalty rather than price incentives.
+
+5. DEPLOY MODEL — Score all new customers monthly and
+   feed predictions into CRM for automated campaigns.
+   Re-train quarterly as new data accumulates.
