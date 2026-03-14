@@ -1,0 +1,48 @@
+
+COHORT RETENTION ANALYSIS REPORT
+E-Commerce Analytics — Phase 6
+============================================================
+
+RETENTION SUMMARY
+─────────────────────────────────────────────────────────
+Overall repeat purchase rate:     3.00%
+Avg orders per repeat customer:   2.11
+Average cohort size (monthly):    4,059 customers
+Total cohorts analysed:           23
+
+AVERAGE RETENTION BY PERIOD
+─────────────────────────────────────────────────────────
+Month +1  (1 month after first buy):  5.45%
+Month +3  (3 months after first buy): 0.25%
+Month +6  (6 months after first buy): 0.27%
+Month +12 (1 year after first buy):   0.21%
+
+BEST AND WORST COHORTS (M+1 retention)
+─────────────────────────────────────────────────────────
+Best cohort:   2016-12  (100.00% returned in M+1)
+Worst cohort:  2017-02  (0.18% returned in M+1)
+
+BUSINESS INTERPRETATION
+─────────────────────────────────────────────────────────
+An M+1 retention rate of 5.45% means that for every
+100 new customers acquired, only 5 return the following month.
+
+Industry benchmark for e-commerce:
+  - Good:      5-10% monthly retention
+  - Average:   2-5%  monthly retention
+  - Concerning: <2%  monthly retention
+
+RECOMMENDATIONS
+─────────────────────────────────────────────────────────
+1. ONBOARDING  — Customers who don't return in M+1 are likely lost.
+                 Implement a 30-day post-purchase email sequence.
+
+2. REACTIVATION — Target M+2 and M+3 dropoffs with personalised
+                  offers. These customers still remember you.
+
+3. LOYALTY     — The 2.1x avg orders from repeat customers
+                 shows high value. Formalise a loyalty programme.
+
+4. COHORT MONITORING — Track each new monthly cohort's M+1
+                       retention as a leading KPI. A declining
+                       trend signals product or service issues early.
