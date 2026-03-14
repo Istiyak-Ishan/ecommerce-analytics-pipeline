@@ -1,0 +1,52 @@
+
+CUSTOMER LIFETIME VALUE REPORT
+E-Commerce Analytics — Phase 7
+============================================================
+
+OVERALL CLV SUMMARY
+─────────────────────────────────────────────────────────
+Total customers analysed:        93,358
+Average CLV:                 R$      27.90
+Median CLV:                  R$      21.07
+Total projected CLV:         R$ 2,604,516.62
+
+CLV COMPONENTS (AVERAGES)
+─────────────────────────────────────────────────────────
+Avg Order Value (AOV):       R$     130.14
+Purchase Frequency:                    0.52 orders/year
+Customer Lifespan:                     1.02 years
+Gross Margin Rate:                      40%
+
+CLV BY RFM SEGMENT
+─────────────────────────────────────────────────────────
+Best segment: loyal
+  Avg CLV:    R$ 28.03
+  Avg AOV:    R$ 131.26
+  Avg orders: 1.0
+
+LTV:CAC BY CHANNEL
+─────────────────────────────────────────────────────────
+Best channel:  Organic Search       LTV:CAC = 5.6x
+Worst channel: Google Ads           LTV:CAC = 0.6x
+
+REVENUE CONCENTRATION (PARETO)
+─────────────────────────────────────────────────────────
+Top  5% of customers → 13.6% of revenue
+Top 20% of customers → 44.5% of revenue
+53.9% of customers generate 80% of revenue
+
+RECOMMENDATIONS
+─────────────────────────────────────────────────────────
+1. INVEST in Organic Search — highest LTV:CAC at 5.6x.
+   Scale budget here before other channels.
+
+2. REVIEW Google Ads — LTV:CAC of 0.6x
+   means the channel may not be profitable. Audit or pause.
+
+3. PROTECT the top 54% of customers who drive 80%
+   of revenue. Assign dedicated account management and
+   ensure they never receive a bad delivery experience.
+
+4. UPSELL to bronze/silver tier customers — a single
+   additional purchase moves them significantly up
+   the CLV curve given the low baseline frequency.
