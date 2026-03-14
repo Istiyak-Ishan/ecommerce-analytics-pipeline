@@ -1,0 +1,18 @@
+# Environments
+venv/
+env/
+.env
+
+# Data and Databases
+data/
+*.csv
+*.db
+*.sqlite
+
+# Python Cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Power BI backups
+*.pbix.backup
