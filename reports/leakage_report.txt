@@ -1,0 +1,44 @@
+
+REVENUE LEAKAGE DIAGNOSTIC REPORT
+E-Commerce Analytics — Phase 5
+============================================================
+
+EXECUTIVE SUMMARY
+─────────────────────────────────────────────────────────
+Total delivered revenue:     R$  12,540,656.41
+Total identified leakage:    R$   1,143,443.19
+Leakage as % of revenue:               9.12%
+Potential annual recovery:   R$   1,143,443.19
+
+LEAKAGE BY SOURCE
+─────────────────────────────────────────────────────────
+  L1 — Excessive discounts                  R$ 616,348.01  (4.915% of revenue)
+  L6 — High-LTV customer discounts          R$ 189,525.32  (1.511% of revenue)
+  L2 — Cancellation losses                  R$ 178,549.88  (1.424% of revenue)
+  L5 — Freight billing mismatches           R$  80,530.87  (0.642% of revenue)
+  L3 — Pricing anomalies                    R$  49,354.60  (0.394% of revenue)
+  L4 — Late delivery refund risk            R$  29,134.51  (0.232% of revenue)
+
+RECOMMENDATIONS
+─────────────────────────────────────────────────────────
+1. DISCOUNTS  — Implement discount eligibility rules. Block discounts
+               on orders >R$200 and for Champions/Loyal segments.
+               Estimated saving: R$ 616,348
+
+2. CANCELLATIONS — Investigate top cancellation categories.
+               Consider stock availability improvements and
+               seller performance SLAs.
+               Estimated saving: R$ 178,550
+
+3. PRICING     — Standardise product pricing rules for the 2043.0 anomalous products.
+               Implement min/max price guardrails per category.
+
+4. DELIVERY    — Late delivery rate is significant. Partner with
+               logistics providers in high-delay states.
+               Proactive customer communication can reduce refund requests.
+
+5. FREIGHT     — Audit zero-freight orders on heavy products.
+               Implement weight-based freight floor pricing.
+
+NOTE: Leakage estimates are conservative. Actual recoverable
+revenue may be higher with targeted interventions.
