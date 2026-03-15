@@ -349,8 +349,11 @@ Pipeline Scripts:            8
 
 ---
 
+---
+
 ## Contact
 
 **Istiyak Hossain Ishan**
-GitHub: github.com/Istiyak-Ishan
-email: istiyakishan7@gmail.com
+
+- GitHub: [github.com/Istiyak-Ishan](https://github.com/Istiyak-Ishan)
+- Email: [istiyakishan7@gmail.com](mailto:istiyakishan7@gmail.com)
