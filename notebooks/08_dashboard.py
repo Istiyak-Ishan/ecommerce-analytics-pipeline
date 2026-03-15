@@ -1,22 +1,43 @@
 """
-Phase 9 — Professional Analytics Dashboard
-============================================
-Single HTML file. Open in Chrome or Firefox.
+Phase 9 — Professional Dashboard (Pure Python)
+================================================
+Generates 18 publication-quality charts as PNGs
+then compiles them into one PDF report.
 
 Run: python notebooks/08_dashboard.py
-Out: reports/dashboard.html
+
+Outputs:
+    reports/charts/          ← 18 individual PNG charts
+    reports/dashboard.pdf    ← full compiled PDF report
 """
 
 import warnings
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-import plotly.io as pio
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import matplotlib.gridspec as gridspec
+from matplotlib.patches import FancyBboxPatch
+from matplotlib.colors import LinearSegmentedColormap
+import seaborn as sns
 from pathlib import Path
 
 warnings.filterwarnings("ignore")
+plt.rcParams.update({
+    "font.family":      "DejaVu Sans",
+    "font.size":        11,
+    "axes.spines.top":  False,
+    "axes.spines.right":False,
+    "axes.grid":        True,
+    "grid.alpha":       0.3,
+    "grid.linestyle":   "--",
+    "figure.dpi":       150,
+    "savefig.dpi":      150,
+    "savefig.bbox":     "tight",
+    "savefig.facecolor":"white",
+})
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PATHS
@@ -25,63 +46,42 @@ warnings.filterwarnings("ignore")
 PROCESSED = Path("data/processed")
 ANALYTICS  = Path("data/processed/analytics")
 REPORTS    = Path("reports")
-REPORTS.mkdir(parents=True, exist_ok=True)
+CHARTS     = REPORTS / "charts"
+CHARTS.mkdir(parents=True, exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # COLORS
 # ─────────────────────────────────────────────────────────────────────────────
 
-C = {
-    "purple":      "#534AB7",
-    "purple_mid":  "#7F77DD",
-    "purple_lite": "#AFA9EC",
-    "purple_pale": "#EEEDFE",
-    "teal":        "#1D9E75",
-    "teal_lite":   "#9FE1CB",
-    "coral":       "#D85A30",
-    "amber":       "#EF9F27",
-    "red":         "#E24B4A",
-    "red_lite":    "#F7C1C1",
-    "gray":        "#888780",
-    "gray_lite":   "#D3D1C7",
-    "bg":          "#F8F7FF",
-    "card":        "#FFFFFF",
-    "text":        "#2C2C2A",
-    "subtext":     "#5F5E5A",
-    "border":      "#E8E6F0",
-}
+PURPLE  = "#534AB7"
+PURPLE2 = "#7F77DD"
+PURPLE3 = "#AFA9EC"
+PURPLE4 = "#EEEDFE"
+TEAL    = "#1D9E75"
+TEAL2   = "#9FE1CB"
+CORAL   = "#D85A30"
+AMBER   = "#EF9F27"
+RED     = "#E24B4A"
+GRAY    = "#888780"
+GRAY2   = "#D3D1C7"
+BG      = "#F8F7FF"
+TEXT    = "#2C2C2A"
+SUBTEXT = "#5F5E5A"
 
-PURPLE_SCALE = [
-    [0.00, "#FFFFFF"],
-    [0.05, "#EEEDFE"],
-    [0.20, "#AFA9EC"],
-    [0.50, "#7F77DD"],
-    [0.75, "#534AB7"],
-    [1.00, "#26215C"],
-]
+PURPLE_CMAP = LinearSegmentedColormap.from_list(
+    "purple_ret",
+    ["#FFFFFF", "#EEEDFE", "#AFA9EC", "#7F77DD", "#534AB7", "#26215C"]
+)
 
 SEG_COLORS = {
-    "champions":       C["purple"],
-    "loyal":           C["purple_mid"],
-    "potential_loyal": C["purple_lite"],
-    "need_attention":  C["amber"],
-    "at_risk":         C["coral"],
-    "lost":            C["red"],
-    "unknown":         C["gray"],
+    "champions":       PURPLE,
+    "loyal":           PURPLE2,
+    "potential_loyal": PURPLE3,
+    "need_attention":  AMBER,
+    "at_risk":         CORAL,
+    "lost":            RED,
+    "unknown":         GRAY,
 }
-
-def L(extra: dict = None) -> dict:
-    """Base layout — no margin or legend so charts can set their own."""
-    base = dict(
-        plot_bgcolor=C["card"],
-        paper_bgcolor=C["card"],
-        font=dict(family="'Segoe UI', Arial, sans-serif",
-                  color=C["text"], size=12),
-        hovermode="closest",
-    )
-    if extra:
-        base.update(extra)
-    return base
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -104,12 +104,9 @@ def load_data() -> dict:
     d["regions"]    = pd.read_csv(ANALYTICS / "07_top_regions.csv")
     d["cohort"]     = pd.read_csv(PROCESSED / "cohort_retention_pct.csv")
 
-    # Parse timestamps
     d["orders"]["order_purchase_ts"] = pd.to_datetime(
         d["orders"]["order_purchase_ts"], errors="coerce"
     )
-
-    # Delivered orders
     d["del"] = d["orders"][
         d["orders"]["order_status"] == "delivered"
     ].copy()
@@ -121,19 +118,18 @@ def load_data() -> dict:
             .rolling(3, min_periods=1).mean()
         )
 
-    # Compute gross_margin_pct for categories if missing
+    # Compute gross_margin_pct if missing
     if "gross_margin_pct" not in d["categories"].columns:
         d["categories"]["gross_margin_pct"] = (
             d["categories"]["total_gross_profit"] /
             d["categories"]["total_revenue"] * 100
         ).round(2)
 
-    # cohort: set cohort_month as index
+    # Set cohort index
     if "cohort_month" in d["cohort"].columns:
         d["cohort"] = d["cohort"].set_index("cohort_month")
 
-    print(f"  Orders:           {len(d['orders']):,}")
-    print(f"  Delivered:        {len(d['del']):,}")
+    print(f"  Delivered orders: {len(d['del']):,}")
     return d
 
 
@@ -149,7 +145,6 @@ def compute_kpis(d: dict) -> dict:
 
     total_revenue   = dl["revenue"].sum()
     total_orders    = dl["order_id"].nunique()
-    # master_analytical uses customer_id
     total_customers = dl["customer_id"].nunique()
     aov             = dl["revenue"].mean()
     gross_profit    = dl["gross_profit"].sum()
@@ -161,19 +156,17 @@ def compute_kpis(d: dict) -> dict:
         dl["is_late_delivery"], errors="coerce"
     ).fillna(0).sum())
     late_rate       = late_count / total_orders * 100
-
-    churn_rate   = churn["churn_flag"].mean() * 100
-    high_risk_n  = len(churn[churn["churn_risk_tier"] == "high"])
-    rev_at_risk  = churn[
+    churn_rate      = churn["churn_flag"].mean() * 100
+    high_risk_n     = len(churn[churn["churn_risk_tier"] == "high"])
+    rev_at_risk     = churn[
         churn["churn_risk_tier"] == "high"
     ]["total_revenue"].sum()
+    total_leak      = leak["leakage_amount"].sum()
+    leak_pct        = total_leak / total_revenue * 100
+    repeat_rate     = (clv["total_orders"] > 1).mean() * 100
+    avg_clv         = clv["clv"].mean()
 
-    total_leak   = leak["leakage_amount"].sum()
-    leak_pct     = total_leak / total_revenue * 100
-    repeat_rate  = (clv["total_orders"] > 1).mean() * 100
-    avg_clv      = clv["clv"].mean()
-
-    k = dict(
+    return dict(
         total_revenue=total_revenue,
         total_orders=total_orders,
         total_customers=total_customers,
@@ -194,137 +187,257 @@ def compute_kpis(d: dict) -> dict:
         avg_clv=avg_clv,
     )
 
-    print("\nKPIs:")
-    for key, val in k.items():
-        if isinstance(val, float):
-            print(f"  {key:<22} {val:>14,.2f}")
-        else:
-            print(f"  {key:<22} {val:>14,}")
-    return k
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def save(fig: plt.Figure, name: str) -> Path:
+    out = CHARTS / f"{name}.png"
+    fig.savefig(out)
+    plt.close(fig)
+    print(f"  Saved {name}.png")
+    return out
+
+
+def styled_ax(ax, title: str, xlabel: str = "",
+              ylabel: str = "") -> None:
+    ax.set_title(title, fontsize=13, fontweight="bold",
+                 color=TEXT, pad=14)
+    if xlabel:
+        ax.set_xlabel(xlabel, fontsize=10, color=SUBTEXT)
+    if ylabel:
+        ax.set_ylabel(ylabel, fontsize=10, color=SUBTEXT)
+    ax.tick_params(colors=SUBTEXT)
+    ax.set_facecolor("white")
+    for spine in ax.spines.values():
+        spine.set_color(GRAY2)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CHARTS
+# CHART 01 — KPI SUMMARY PAGE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def c_monthly(monthly: pd.DataFrame) -> go.Figure:
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
+def chart_kpi_summary(k: dict) -> Path:
+    fig = plt.figure(figsize=(18, 7), facecolor=BG)
+    fig.suptitle(
+        "E-Commerce Revenue Intelligence Dashboard — Executive Summary",
+        fontsize=18, fontweight="bold", color=TEXT, y=1.02
+    )
 
-    fig.add_trace(go.Bar(
-        x=monthly["year_month"],
-        y=monthly["monthly_revenue"],
-        name="Monthly Revenue",
-        marker=dict(
-            color=monthly["monthly_revenue"],
-            colorscale=[[0, C["purple_pale"]], [1, C["purple"]]],
-            showscale=False,
-        ),
-        hovertemplate="<b>%{x}</b><br>R$%{y:,.0f}<extra></extra>",
-    ), secondary_y=False)
+    kpis = [
+        ("Total Revenue",      f"R${k['total_revenue']:,.0f}",  PURPLE),
+        ("Total Orders",       f"{k['total_orders']:,}",        PURPLE),
+        ("Avg Order Value",    f"R${k['aov']:,.2f}",            PURPLE),
+        ("Gross Margin",       f"{k['gross_margin']:.1f}%",     TEAL),
+        ("Repeat Rate",        f"{k['repeat_rate']:.1f}%",      TEAL),
+        ("Revenue Leakage",    f"R${k['total_leak']:,.0f}",     AMBER),
+        ("Discount Rate",      f"{k['disc_rate']:.1f}%",        CORAL),
+        ("Late Deliveries",    f"{k['late_rate']:.1f}%",        CORAL),
+        ("Churn Rate",         f"{k['churn_rate']:.1f}%",       RED),
+        ("High-Risk Customers",f"{k['high_risk_n']:,}",         RED),
+        ("Revenue at Risk",    f"R${k['rev_at_risk']:,.0f}",    RED),
+        ("Avg CLV",            f"R${k['avg_clv']:,.0f}",        TEAL),
+    ]
 
-    fig.add_trace(go.Scatter(
-        x=monthly["year_month"],
-        y=monthly["rolling_3m_avg"],
-        name="3M Avg",
-        mode="lines",
-        line=dict(color=C["coral"], width=3),
-        hovertemplate="<b>%{x}</b><br>3M Avg: R$%{y:,.0f}<extra></extra>",
-    ), secondary_y=False)
+    cols = 6
+    rows = 2
+    axes = []
+    for i, (label, value, color) in enumerate(kpis):
+        ax = fig.add_subplot(rows, cols, i + 1)
+        ax.set_facecolor("white")
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        ax.set_xticks([])
+        ax.set_yticks([])
 
-    fig.add_trace(go.Scatter(
-        x=monthly["year_month"],
-        y=monthly["cumulative_revenue"],
-        name="Cumulative",
-        mode="lines",
-        line=dict(color=C["teal"], width=2, dash="dot"),
-        hovertemplate="<b>%{x}</b><br>Cumulative: R$%{y:,.0f}<extra></extra>",
-    ), secondary_y=True)
+        # Card background
+        ax.add_patch(FancyBboxPatch(
+            (0.05, 0.05), 0.90, 0.90,
+            boxstyle="round,pad=0.02",
+            linewidth=1.5,
+            edgecolor=color + "44",
+            facecolor="white",
+            transform=ax.transAxes,
+        ))
 
-    fig.update_layout(L({
-        "title": dict(text="<b>Monthly Revenue Trend</b>",
-                      font=dict(size=15)),
-        "xaxis": dict(showgrid=False, tickangle=45,
-                      tickfont=dict(size=10)),
-        "yaxis": dict(title="Revenue (R$)", gridcolor=C["border"],
-                      tickprefix="R$", tickformat=",.0f"),
-        "yaxis2": dict(title="Cumulative (R$)", showgrid=False,
-                       tickprefix="R$", tickformat=",.0f"),
-        "legend": dict(orientation="h", y=1.12, x=0),
-        "margin": dict(t=70, b=60, l=70, r=60),
-        "height": 420,
-    }))
-    return fig
+        ax.text(0.5, 0.72, value,
+                ha="center", va="center",
+                fontsize=18, fontweight="bold",
+                color=color, transform=ax.transAxes)
+        ax.text(0.5, 0.30, label,
+                ha="center", va="center",
+                fontsize=9, color=SUBTEXT,
+                transform=ax.transAxes)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        axes.append(ax)
+
+    plt.tight_layout(pad=1.5)
+    return save(fig, "01_kpi_summary")
 
 
-def c_mom(monthly: pd.DataFrame) -> go.Figure:
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 02 — MONTHLY REVENUE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_monthly_revenue(monthly: pd.DataFrame) -> Path:
+    fig, ax1 = plt.subplots(figsize=(16, 6), facecolor="white")
+    ax2 = ax1.twinx()
+
+    x     = range(len(monthly))
+    bars  = ax1.bar(x, monthly["monthly_revenue"],
+                    color=PURPLE4, edgecolor=PURPLE,
+                    linewidth=0.5, label="Monthly Revenue", zorder=2)
+
+    ax1.plot(x, monthly["rolling_3m_avg"],
+             color=CORAL, linewidth=2.5,
+             label="3M Rolling Avg", zorder=3)
+
+    ax2.plot(x, monthly["cumulative_revenue"],
+             color=TEAL, linewidth=2,
+             linestyle="--", label="Cumulative", zorder=3)
+
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(monthly["year_month"],
+                         rotation=45, ha="right", fontsize=9)
+    ax1.set_ylabel("Monthly Revenue (R$)", color=TEXT)
+    ax2.set_ylabel("Cumulative Revenue (R$)", color=TEAL)
+    ax1.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"R${v:,.0f}")
+    )
+    ax2.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"R${v:,.0f}")
+    )
+    ax2.tick_params(colors=TEAL)
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2,
+               loc="upper left", fontsize=9)
+
+    styled_ax(ax1, "Monthly Revenue Trend")
+    ax1.set_facecolor("white")
+    ax2.set_facecolor("white")
+    fig.tight_layout()
+    return save(fig, "02_monthly_revenue")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 03 — MoM GROWTH
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_mom_growth(monthly: pd.DataFrame) -> Path:
     df     = monthly.dropna(subset=["mom_growth_pct"]).copy()
-    colors = [C["teal"] if v >= 0 else C["red"]
+    colors = [TEAL if v >= 0 else RED
               for v in df["mom_growth_pct"]]
 
-    fig = go.Figure(go.Bar(
-        x=df["year_month"],
-        y=df["mom_growth_pct"],
-        marker_color=colors,
-        text=[f"{v:+.1f}%" for v in df["mom_growth_pct"]],
-        textposition="outside",
-        textfont=dict(size=9),
-        hovertemplate="<b>%{x}</b><br>%{y:+.2f}%<extra></extra>",
+    fig, ax = plt.subplots(figsize=(16, 5), facecolor="white")
+    x = range(len(df))
+    ax.bar(x, df["mom_growth_pct"], color=colors,
+           edgecolor="white", linewidth=0.5)
+    ax.axhline(0, color=TEXT, linewidth=1.5)
+    ax.set_xticks(x)
+    ax.set_xticklabels(df["year_month"],
+                        rotation=45, ha="right", fontsize=9)
+    ax.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"{v:+.1f}%")
+    )
+
+    # Annotate bars
+    for xi, val in zip(x, df["mom_growth_pct"]):
+        if abs(val) > 5:
+            ax.text(xi, val + (1 if val >= 0 else -1.5),
+                    f"{val:+.1f}%",
+                    ha="center", fontsize=7.5,
+                    color=TEAL if val >= 0 else RED)
+
+    styled_ax(ax, "Month-over-Month Revenue Growth %",
+              ylabel="Growth %")
+    ax.add_patch(mpatches.FancyArrowPatch(
+        (0, 0), (0, 0), color=TEAL, label="Growth"
     ))
-    fig.add_hline(y=0, line_color=C["text"], line_width=1.5)
-
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>Month-over-Month Growth</b>  "
-                 "<sup>Green = growth | Red = decline</sup>",
-            font=dict(size=15)),
-        "xaxis": dict(showgrid=False, tickangle=45,
-                      tickfont=dict(size=10)),
-        "yaxis": dict(gridcolor=C["border"], ticksuffix="%"),
-        "showlegend": False,
-        "margin": dict(t=70, b=60, l=60, r=40),
-        "height": 360,
-    }))
-    return fig
+    green_patch = mpatches.Patch(color=TEAL, label="Growth")
+    red_patch   = mpatches.Patch(color=RED,  label="Decline")
+    ax.legend(handles=[green_patch, red_patch],
+              fontsize=9, loc="upper left")
+    fig.tight_layout()
+    return save(fig, "03_mom_growth")
 
 
-def c_waterfall(k: dict) -> go.Figure:
-    gross = k["total_revenue"] + k["total_disc"] + k["total_freight"]
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 04 — REVENUE WATERFALL
+# ─────────────────────────────────────────────────────────────────────────────
 
-    fig = go.Figure(go.Waterfall(
-        orientation="v",
-        measure=["absolute", "relative", "relative", "total", "total"],
-        x=["Gross Revenue", "– Discounts", "– Freight",
-           "Net Revenue", "Gross Profit"],
-        y=[gross, -k["total_disc"], -k["total_freight"],
-           k["total_revenue"], k["gross_profit"]],
-        text=[f"R${abs(v):,.0f}" for v in [
-            gross, -k["total_disc"], -k["total_freight"],
-            k["total_revenue"], k["gross_profit"]
-        ]],
-        textposition="outside",
-        connector=dict(line=dict(color=C["border"], width=1.5)),
-        increasing=dict(marker=dict(color=C["teal"])),
-        decreasing=dict(marker=dict(color=C["red"])),
-        totals=dict(marker=dict(color=C["purple"])),
-        hovertemplate="<b>%{x}</b><br>R$%{y:,.0f}<extra></extra>",
-    ))
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>Revenue Waterfall</b>  "
-                 "<sup>Gross → Discounts → Freight → Net → Profit</sup>",
-            font=dict(size=15)),
-        "yaxis": dict(gridcolor=C["border"],
-                      tickprefix="R$", tickformat=",.0f"),
-        "xaxis": dict(showgrid=False),
-        "showlegend": False,
-        "margin": dict(t=70, b=50, l=80, r=50),
-        "height": 400,
-    }))
-    return fig
+def chart_waterfall(k: dict) -> Path:
+    gross  = k["total_revenue"] + k["total_disc"] + k["total_freight"]
+    labels = ["Gross\nRevenue", "Discounts", "Freight",
+              "Net\nRevenue", "Gross\nProfit"]
+    values = [gross, -k["total_disc"], -k["total_freight"],
+              k["total_revenue"], k["gross_profit"]]
+    colors = [PURPLE, RED, RED, TEAL, TEAL]
+    types  = ["abs", "rel", "rel", "total", "total"]
+
+    fig, ax = plt.subplots(figsize=(12, 6), facecolor="white")
+    running = 0
+    bottoms = []
+    for i, (val, typ) in enumerate(zip(values, types)):
+        if typ == "abs":
+            bottom = 0
+            running = val
+        elif typ == "rel":
+            bottom = running if val < 0 else running
+            running += val
+        else:
+            bottom = 0
+        bottoms.append(bottom)
+
+    running = 0
+    for i, (label, val, color, typ) in enumerate(
+            zip(labels, values, colors, types)):
+        if typ == "abs":
+            ax.bar(i, val, color=color, alpha=0.85,
+                   edgecolor="white", linewidth=1.5)
+            running = val
+        elif typ == "rel":
+            if val < 0:
+                ax.bar(i, abs(val), bottom=running + val,
+                       color=color, alpha=0.85,
+                       edgecolor="white", linewidth=1.5)
+                # Connector
+                ax.plot([i-0.4, i+0.4], [running, running],
+                        color=GRAY2, linewidth=1, linestyle="--")
+                running += val
+            else:
+                ax.bar(i, val, bottom=running,
+                       color=color, alpha=0.85,
+                       edgecolor="white", linewidth=1.5)
+                running += val
+        else:
+            ax.bar(i, val, color=color, alpha=0.85,
+                   edgecolor="white", linewidth=1.5)
+
+        ax.text(i, (running if typ != "rel" else running) + gross * 0.01,
+                f"R${abs(val):,.0f}",
+                ha="center", fontsize=9,
+                fontweight="bold", color=TEXT)
+
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels, fontsize=10)
+    ax.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"R${v:,.0f}")
+    )
+    styled_ax(ax, "Revenue Waterfall — Gross to Net to Profit",
+              ylabel="Amount (R$)")
+    fig.tight_layout()
+    return save(fig, "04_revenue_waterfall")
 
 
-def c_channel(dl: pd.DataFrame) -> go.Figure:
-    # master_analytical has channel_name directly
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 05 — REVENUE BY CHANNEL
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_channel(dl: pd.DataFrame) -> Path:
     ch = (
         dl.groupby("channel_name")
         .agg(revenue=("revenue", "sum"),
@@ -332,176 +445,154 @@ def c_channel(dl: pd.DataFrame) -> go.Figure:
         .reset_index()
         .sort_values("revenue", ascending=False)
     )
-    palette = [C["purple"], C["teal"], C["coral"],
-               C["amber"], C["red"], C["gray"]]
+    palette = [PURPLE, TEAL, CORAL, AMBER, RED, GRAY]
 
-    fig = make_subplots(
-        rows=1, cols=2,
-        specs=[[{"type": "domain"}, {"type": "bar"}]],
-        subplot_titles=["Revenue Share %", "Orders by Channel"],
-    )
-    fig.add_trace(go.Pie(
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6),
+                              facecolor="white")
+
+    # Pie
+    wedges, texts, autotexts = axes[0].pie(
+        ch["revenue"],
         labels=ch["channel_name"],
-        values=ch["revenue"],
-        hole=0.50,
-        marker=dict(colors=palette[:len(ch)]),
-        textinfo="label+percent",
-        textfont=dict(size=11),
-        hovertemplate="<b>%{label}</b><br>"
-                      "R$%{value:,.0f}<br>%{percent}<extra></extra>",
-    ), row=1, col=1)
-
-    fig.add_trace(go.Bar(
-        y=ch["channel_name"],
-        x=ch["orders"],
-        orientation="h",
-        marker_color=palette[:len(ch)],
-        text=ch["orders"],
-        textposition="outside",
-        hovertemplate="<b>%{y}</b><br>%{x:,}<extra></extra>",
-    ), row=1, col=2)
-
-    fig.update_layout(L({
-        "title": dict(text="<b>Revenue and Orders by Channel</b>",
-                      font=dict(size=15)),
-        "showlegend": False,
-        "margin": dict(t=70, b=50, l=60, r=40),
-        "height": 380,
-    }))
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(showgrid=False)
-    return fig
-
-
-def c_leakage_bar(leakage: pd.DataFrame,
-                   total_revenue: float) -> go.Figure:
-    leak   = leakage.sort_values("leakage_amount",
-                                  ascending=True).copy()
-    total  = leak["leakage_amount"].sum()
-    colors = [C["red"], C["coral"], C["amber"],
-              C["purple_mid"], C["teal"],
-              C["gray_lite"]][:len(leak)]
-
-    fig = go.Figure(go.Bar(
-        x=leak["leakage_amount"],
-        y=leak["source"],
-        orientation="h",
-        marker=dict(color=colors,
-                    line=dict(color="white", width=1)),
-        text=[f"  R${v:,.0f}  ({p:.2f}%)"
-              for v, p in zip(leak["leakage_amount"],
-                              leak["pct_of_revenue"])],
-        textposition="outside",
-        textfont=dict(size=11),
-        hovertemplate="<b>%{y}</b><br>"
-                      "R$%{x:,.0f}<extra></extra>",
-    ))
-    fig.add_annotation(
-        x=leak["leakage_amount"].max() * 0.98,
-        y=len(leak) - 0.5,
-        text=f"<b>Total: R${total:,.0f}<br>"
-             f"({total/total_revenue*100:.1f}% of revenue)</b>",
-        showarrow=False,
-        bgcolor=C["red_lite"],
-        bordercolor=C["red"],
-        borderwidth=1, borderpad=8,
-        font=dict(size=12, color=C["red"]),
+        colors=palette[:len(ch)],
+        autopct="%1.1f%%",
+        startangle=140,
+        pctdistance=0.75,
+        wedgeprops=dict(edgecolor="white", linewidth=2),
     )
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>Revenue Leakage by Source</b>  "
-                 "<sup>Recoverable revenue identified</sup>",
-            font=dict(size=15)),
-        "xaxis": dict(tickprefix="R$", tickformat=",.0f",
-                      showgrid=False),
-        "yaxis": dict(showgrid=False, tickfont=dict(size=11)),
-        "showlegend": False,
-        "margin": dict(t=70, b=50, l=240, r=230),
-        "height": 400,
-    }))
-    return fig
+    for at in autotexts:
+        at.set_fontsize(9)
+        at.set_color("white")
+        at.set_fontweight("bold")
+    circle = plt.Circle((0, 0), 0.50, color="white")
+    axes[0].add_artist(circle)
+    styled_ax(axes[0], "Revenue Share by Channel")
+    axes[0].set_facecolor("white")
+
+    # Bar
+    axes[1].barh(ch["channel_name"], ch["orders"],
+                  color=palette[:len(ch)],
+                  edgecolor="white", linewidth=0.5)
+    for i, v in enumerate(ch["orders"]):
+        axes[1].text(v + ch["orders"].max() * 0.01, i,
+                     f"{v:,}", va="center", fontsize=9)
+    axes[1].xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"{v:,.0f}")
+    )
+    styled_ax(axes[1], "Orders by Channel",
+              xlabel="Order Count")
+    axes[1].invert_yaxis()
+
+    fig.tight_layout()
+    return save(fig, "05_channel_performance")
 
 
-def c_leakage_sun(leakage: pd.DataFrame,
-                   total_revenue: float) -> go.Figure:
-    total_leak = leakage["leakage_amount"].sum()
-    retained   = total_revenue - total_leak
-    sources    = leakage["source"].str.split(" — ").str[-1].tolist()
-    amounts    = leakage["leakage_amount"].tolist()
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 06 — LEAKAGE BAR
+# ─────────────────────────────────────────────────────────────────────────────
 
-    labels  = ["Total Revenue"] + sources + ["Retained"]
-    parents = [""] + ["Total Revenue"] * len(leakage) + ["Total Revenue"]
-    values  = [total_revenue] + amounts + [retained]
-    colors  = ([C["purple"]] +
-               [C["red"], C["coral"], C["amber"],
-                C["purple_mid"], C["teal"],
-                C["gray"]][:len(leakage)] +
-               [C["teal"]])
+def chart_leakage_bar(leakage: pd.DataFrame,
+                       total_revenue: float) -> Path:
+    leak   = leakage.sort_values(
+        "leakage_amount", ascending=True
+    ).copy()
+    total  = leak["leakage_amount"].sum()
+    colors = [RED, CORAL, AMBER, PURPLE2, TEAL, GRAY2][:len(leak)]
 
-    fig = go.Figure(go.Sunburst(
-        labels=labels, parents=parents,
-        values=values, branchvalues="total",
-        marker=dict(colors=colors),
-        hovertemplate="<b>%{label}</b><br>"
-                      "R$%{value:,.0f}<br>"
-                      "%{percentParent:.1%}<extra></extra>",
-        textfont=dict(size=11),
-    ))
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>Revenue Composition</b>  "
-                 "<sup>Leakage sources vs retained</sup>",
-            font=dict(size=15)),
-        "margin": dict(t=70, b=20, l=20, r=20),
-        "height": 400,
-    }))
-    return fig
+    # Shorten source labels
+    leak["label"] = leak["source"].apply(
+        lambda s: s.split(" — ")[-1] if " — " in s else s
+    )
+
+    fig, ax = plt.subplots(figsize=(14, 6), facecolor="white")
+    bars = ax.barh(leak["label"], leak["leakage_amount"],
+                   color=colors, edgecolor="white", linewidth=0.5)
+
+    for bar, (_, row) in zip(bars, leak.iterrows()):
+        ax.text(
+            bar.get_width() + total * 0.005,
+            bar.get_y() + bar.get_height() / 2,
+            f"R${row['leakage_amount']:,.0f}  ({row['pct_of_revenue']:.2f}%)",
+            va="center", fontsize=10, color=TEXT
+        )
+
+    ax.xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"R${v:,.0f}")
+    )
+    ax.set_xlim(0, leak["leakage_amount"].max() * 1.45)
+
+    # Total annotation
+    ax.text(0.98, 0.97,
+            f"Total Leakage\nR${total:,.0f}\n"
+            f"({total/total_revenue*100:.1f}% of revenue)",
+            transform=ax.transAxes,
+            ha="right", va="top",
+            fontsize=11, fontweight="bold",
+            color=RED,
+            bbox=dict(boxstyle="round,pad=0.5",
+                      facecolor="#FFF0F0",
+                      edgecolor=RED,
+                      linewidth=1.5))
+
+    styled_ax(ax, "Revenue Leakage by Source",
+              xlabel="Leakage Amount (R$)")
+    fig.tight_layout()
+    return save(fig, "06_leakage_bar")
 
 
-def c_top_cat(categories: pd.DataFrame) -> go.Figure:
-    # column name is 'category' (not category_english)
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 07 — TOP CATEGORIES
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_top_categories(categories: pd.DataFrame) -> Path:
     top = categories.head(20).sort_values(
         "total_revenue", ascending=True
     )
     tier_colors = {
-        "top performer":  C["purple"],
-        "solid":          C["teal"],
-        "average":        C["amber"],
-        "underperformer": C["gray"],
+        "top performer":  PURPLE,
+        "solid":          TEAL,
+        "average":        AMBER,
+        "underperformer": GRAY,
     }
-    colors = [tier_colors.get(str(t), C["gray"])
+    colors = [tier_colors.get(str(t), GRAY)
               for t in top["performance_tier"]]
 
-    fig = go.Figure(go.Bar(
-        x=top["total_revenue"],
-        y=top["category"],
-        orientation="h",
-        marker=dict(color=colors,
-                    line=dict(color="white", width=0.5)),
-        text=[f"R${v:,.0f}" for v in top["total_revenue"]],
-        textposition="outside",
-        textfont=dict(size=10),
-        hovertemplate="<b>%{y}</b><br>"
-                      "R$%{x:,.0f}<extra></extra>",
-    ))
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>Top 20 Categories by Revenue</b>  "
-                 "<sup>Color = performance tier</sup>",
-            font=dict(size=15)),
-        "xaxis": dict(tickprefix="R$", tickformat=",.0f",
-                      showgrid=False),
-        "yaxis": dict(showgrid=False, tickfont=dict(size=10)),
-        "showlegend": False,
-        "margin": dict(t=70, b=50, l=210, r=160),
-        "height": 580,
-    }))
-    return fig
+    fig, ax = plt.subplots(figsize=(14, 9), facecolor="white")
+    bars = ax.barh(top["category"], top["total_revenue"],
+                   color=colors, edgecolor="white", linewidth=0.3)
+
+    for bar, val in zip(bars, top["total_revenue"]):
+        ax.text(bar.get_width() + top["total_revenue"].max() * 0.01,
+                bar.get_y() + bar.get_height() / 2,
+                f"R${val:,.0f}",
+                va="center", fontsize=9, color=TEXT)
+
+    ax.xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"R${v:,.0f}")
+    )
+    ax.set_xlim(0, top["total_revenue"].max() * 1.22)
+
+    # Legend
+    handles = [
+        mpatches.Patch(color=PURPLE, label="Top performer"),
+        mpatches.Patch(color=TEAL,   label="Solid"),
+        mpatches.Patch(color=AMBER,  label="Average"),
+        mpatches.Patch(color=GRAY,   label="Underperformer"),
+    ]
+    ax.legend(handles=handles, fontsize=9,
+              loc="lower right")
+
+    styled_ax(ax, "Top 20 Categories by Revenue",
+              xlabel="Total Revenue (R$)")
+    fig.tight_layout()
+    return save(fig, "07_top_categories")
 
 
-def c_quadrant(categories: pd.DataFrame) -> go.Figure:
-    # uses: total_orders, gross_margin_pct, total_revenue,
-    #       category, performance_tier
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 08 — QUADRANT SCATTER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_quadrant(categories: pd.DataFrame) -> Path:
     df = categories.dropna(
         subset=["total_orders", "gross_margin_pct"]
     ).copy()
@@ -509,292 +600,279 @@ def c_quadrant(categories: pd.DataFrame) -> go.Figure:
     med_m = df["gross_margin_pct"].median()
 
     def quad(row):
-        hi_o = row["total_orders"]    >= med_o
+        hi_o = row["total_orders"]     >= med_o
         hi_m = row["gross_margin_pct"] >= med_m
         if hi_o and hi_m:     return "Stars"
         if hi_o and not hi_m: return "Volume drivers"
         if not hi_o and hi_m: return "Niche high-margin"
         return "Underperformers"
 
-    df["quad"] = df.apply(quad, axis=1)
-    q_colors = {
-        "Stars":             C["purple"],
-        "Volume drivers":    C["teal"],
-        "Niche high-margin": C["amber"],
-        "Underperformers":   C["red"],
+    df["quad"]  = df.apply(quad, axis=1)
+    q_colors    = {
+        "Stars":             PURPLE,
+        "Volume drivers":    TEAL,
+        "Niche high-margin": AMBER,
+        "Underperformers":   RED,
     }
 
-    fig = go.Figure()
-    for q, color in q_colors.items():
-        sub = df[df["quad"] == q]
-        fig.add_trace(go.Scatter(
-            x=sub["total_orders"],
-            y=sub["gross_margin_pct"],
-            mode="markers+text",
-            name=q,
-            marker=dict(
-                color=color,
-                size=sub["total_revenue"] /
-                     sub["total_revenue"].max() * 38 + 7,
-                opacity=0.72,
-                line=dict(color="white", width=1),
-            ),
-            text=sub["category"].str[:14],
-            textposition="top center",
-            textfont=dict(size=8),
-            hovertemplate="<b>%{text}</b><br>"
-                          "Orders: %{x:,}<br>"
-                          "Margin: %{y:.1f}%<extra></extra>",
-        ))
+    fig, ax = plt.subplots(figsize=(14, 9), facecolor="white")
+    sizes = (
+        (df["total_revenue"] - df["total_revenue"].min()) /
+        (df["total_revenue"].max() - df["total_revenue"].min())
+    ) * 400 + 30
 
-    fig.add_vline(x=med_o, line_dash="dash",
-                  line_color=C["gray"], line_width=1)
-    fig.add_hline(y=med_m, line_dash="dash",
-                  line_color=C["gray"], line_width=1)
+    for q, color in q_colors.items():
+        mask = df["quad"] == q
+        ax.scatter(
+            df[mask]["total_orders"],
+            df[mask]["gross_margin_pct"],
+            s=sizes[mask],
+            color=color,
+            alpha=0.70,
+            edgecolors="white",
+            linewidth=0.8,
+            label=q,
+            zorder=3,
+        )
+        for _, row in df[mask].iterrows():
+            ax.annotate(
+                row["category"][:14],
+                (row["total_orders"], row["gross_margin_pct"]),
+                fontsize=6.5,
+                color=TEXT,
+                xytext=(4, 4),
+                textcoords="offset points",
+            )
+
+    ax.axvline(med_o, color=GRAY2, linewidth=1.2,
+               linestyle="--", zorder=1)
+    ax.axhline(med_m, color=GRAY2, linewidth=1.2,
+               linestyle="--", zorder=1)
 
     x_max = df["total_orders"].max()
     y_max = df["gross_margin_pct"].max()
-    for label, x, y, col in [
-        ("STARS",        x_max*0.82, y_max*0.92, C["purple"]),
-        ("VOLUME",       x_max*0.82, y_max*0.08, C["teal"]),
-        ("NICHE",        x_max*0.08, y_max*0.92, C["amber"]),
-        ("UNDERPERFORM", x_max*0.08, y_max*0.08, C["red"]),
+    for label, x, y, color in [
+        ("STARS",        x_max*0.82, y_max*0.90, PURPLE),
+        ("VOLUME",       x_max*0.82, y_max*0.08, TEAL),
+        ("NICHE",        x_max*0.08, y_max*0.90, AMBER),
+        ("UNDERPERFORM", x_max*0.08, y_max*0.08, RED),
     ]:
-        fig.add_annotation(
-            x=x, y=y, text=f"<b>{label}</b>",
-            showarrow=False,
-            font=dict(size=11, color=col),
-            opacity=0.35,
-        )
+        ax.text(x, y, label, fontsize=13,
+                fontweight="bold", color=color,
+                alpha=0.25, ha="center")
 
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>Volume vs Margin Quadrant</b>  "
-                 "<sup>Bubble = revenue | Top-right = Stars</sup>",
-            font=dict(size=15)),
-        "xaxis": dict(title="Total Orders",
-                      showgrid=True, gridcolor=C["border"]),
-        "yaxis": dict(title="Gross Margin %",
-                      showgrid=True, gridcolor=C["border"],
-                      ticksuffix="%"),
-        "legend": dict(orientation="h", y=-0.14),
-        "margin": dict(t=70, b=80, l=60, r=40),
-        "height": 520,
-    }))
-    return fig
+    ax.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"{v:.1f}%")
+    )
+    ax.legend(fontsize=9, loc="upper right")
+    styled_ax(ax, "Volume vs Margin Quadrant Analysis",
+              xlabel="Total Orders",
+              ylabel="Gross Margin %")
+    fig.tight_layout()
+    return save(fig, "08_quadrant_scatter")
 
 
-def c_regions(regions: pd.DataFrame) -> go.Figure:
-    # columns: state, total_revenue, avg_order_value
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 09 — REGIONAL PERFORMANCE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_regions(regions: pd.DataFrame) -> Path:
     top = regions.sort_values(
         "total_revenue", ascending=False
     ).head(15).sort_values("total_revenue", ascending=True)
 
-    fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=["Revenue by State (Top 15)",
-                         "Avg Order Value by State"],
-        horizontal_spacing=0.12,
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7),
+                              facecolor="white")
+
+    # Revenue
+    colors1 = plt.cm.get_cmap("Purples")(
+        np.linspace(0.35, 0.85, len(top))
     )
-    fig.add_trace(go.Bar(
-        y=top["state"], x=top["total_revenue"],
-        orientation="h",
-        marker=dict(
-            color=top["total_revenue"],
-            colorscale=[[0, C["purple_pale"]], [1, C["purple"]]],
-            showscale=False,
-        ),
-        text=[f"R${v:,.0f}" for v in top["total_revenue"]],
-        textposition="outside",
-        textfont=dict(size=10),
-        hovertemplate="<b>%{y}</b><br>R$%{x:,.0f}<extra></extra>",
-    ), row=1, col=1)
+    axes[0].barh(top["state"], top["total_revenue"],
+                  color=colors1, edgecolor="white", linewidth=0.5)
+    for i, v in enumerate(top["total_revenue"]):
+        axes[0].text(v + top["total_revenue"].max()*0.01,
+                     i, f"R${v:,.0f}",
+                     va="center", fontsize=9)
+    axes[0].xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"R${v:,.0f}")
+    )
+    styled_ax(axes[0], "Revenue by State (Top 15)",
+              xlabel="Total Revenue (R$)")
 
-    fig.add_trace(go.Bar(
-        y=top["state"], x=top["avg_order_value"],
-        orientation="h",
-        marker=dict(
-            color=top["avg_order_value"],
-            colorscale=[[0, C["teal_lite"]], [1, C["teal"]]],
-            showscale=False,
-        ),
-        text=[f"R${v:,.0f}" for v in top["avg_order_value"]],
-        textposition="outside",
-        textfont=dict(size=10),
-        hovertemplate="<b>%{y}</b><br>R$%{x:,.0f}<extra></extra>",
-    ), row=1, col=2)
+    # AOV
+    colors2 = plt.cm.get_cmap("Greens")(
+        np.linspace(0.35, 0.85, len(top))
+    )
+    axes[1].barh(top["state"], top["avg_order_value"],
+                  color=colors2, edgecolor="white", linewidth=0.5)
+    for i, v in enumerate(top["avg_order_value"]):
+        axes[1].text(v + top["avg_order_value"].max()*0.01,
+                     i, f"R${v:,.0f}",
+                     va="center", fontsize=9)
+    axes[1].xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"R${v:,.0f}")
+    )
+    styled_ax(axes[1], "Avg Order Value by State",
+              xlabel="Avg Order Value (R$)")
 
-    fig.update_layout(L({
-        "title": dict(text="<b>Regional Performance</b>",
-                      font=dict(size=15)),
-        "showlegend": False,
-        "margin": dict(t=70, b=50, l=60, r=100),
-        "height": 460,
-    }))
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(showgrid=False)
-    return fig
+    fig.tight_layout()
+    return save(fig, "09_regional_performance")
 
 
-def c_rfm(clv_seg: pd.DataFrame) -> go.Figure:
-    # columns: rfm_segment, customer_count, avg_clv, avg_orders
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 10 — RFM SEGMENTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_rfm(clv_seg: pd.DataFrame) -> Path:
     seg    = clv_seg.copy()
-    colors = [SEG_COLORS.get(s, C["gray"]) for s in seg["rfm_segment"]]
+    colors = [SEG_COLORS.get(s, GRAY) for s in seg["rfm_segment"]]
 
-    fig = make_subplots(
-        rows=1, cols=3,
-        specs=[[{"type": "domain"}, {"type": "bar"}, {"type": "bar"}]],
-        subplot_titles=["Customer Count", "Avg CLV (R$)", "Avg Orders"],
-    )
-    fig.add_trace(go.Pie(
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6),
+                              facecolor="white")
+
+    # Pie
+    wedges, texts, autotexts = axes[0].pie(
+        seg["customer_count"],
         labels=seg["rfm_segment"],
-        values=seg["customer_count"],
-        hole=0.50,
-        marker=dict(colors=colors),
-        textinfo="percent",
-        textfont=dict(size=10),
-        hovertemplate="<b>%{label}</b><br>"
-                      "%{value:,}<br>%{percent}<extra></extra>",
-    ), row=1, col=1)
+        colors=colors,
+        autopct="%1.1f%%",
+        startangle=140,
+        pctdistance=0.78,
+        wedgeprops=dict(edgecolor="white", linewidth=2),
+    )
+    for at in autotexts:
+        at.set_fontsize(8)
+        at.set_fontweight("bold")
+    circle = plt.Circle((0, 0), 0.50, color="white")
+    axes[0].add_artist(circle)
+    styled_ax(axes[0], "Customer Count by Segment")
+    axes[0].set_facecolor("white")
 
+    # Avg CLV
     s2 = seg.sort_values("avg_clv", ascending=True)
-    fig.add_trace(go.Bar(
-        y=s2["rfm_segment"], x=s2["avg_clv"],
-        orientation="h",
-        marker_color=[SEG_COLORS.get(s, C["gray"])
-                      for s in s2["rfm_segment"]],
-        text=[f"R${v:,.0f}" for v in s2["avg_clv"]],
-        textposition="outside",
-        textfont=dict(size=10),
-        hovertemplate="<b>%{y}</b><br>R$%{x:,.0f}<extra></extra>",
-    ), row=1, col=2)
+    clr2 = [SEG_COLORS.get(s, GRAY) for s in s2["rfm_segment"]]
+    axes[1].barh(s2["rfm_segment"], s2["avg_clv"],
+                  color=clr2, edgecolor="white")
+    for i, v in enumerate(s2["avg_clv"]):
+        axes[1].text(v + s2["avg_clv"].max()*0.01, i,
+                     f"R${v:,.0f}", va="center", fontsize=9)
+    axes[1].xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"R${v:,.0f}")
+    )
+    styled_ax(axes[1], "Avg CLV by Segment",
+              xlabel="Avg CLV (R$)")
 
+    # Avg Orders
     s3 = seg.sort_values("avg_orders", ascending=True)
-    fig.add_trace(go.Bar(
-        y=s3["rfm_segment"], x=s3["avg_orders"],
-        orientation="h",
-        marker_color=[SEG_COLORS.get(s, C["gray"])
-                      for s in s3["rfm_segment"]],
-        text=[f"{v:.1f}" for v in s3["avg_orders"]],
-        textposition="outside",
-        textfont=dict(size=10),
-        hovertemplate="<b>%{y}</b><br>%{x:.1f}<extra></extra>",
-    ), row=1, col=3)
+    clr3 = [SEG_COLORS.get(s, GRAY) for s in s3["rfm_segment"]]
+    axes[2].barh(s3["rfm_segment"], s3["avg_orders"],
+                  color=clr3, edgecolor="white")
+    for i, v in enumerate(s3["avg_orders"]):
+        axes[2].text(v + s3["avg_orders"].max()*0.01, i,
+                     f"{v:.1f}", va="center", fontsize=9)
+    styled_ax(axes[2], "Avg Orders by Segment",
+              xlabel="Avg Orders")
 
-    fig.update_layout(L({
-        "title": dict(text="<b>RFM Segment Overview</b>",
-                      font=dict(size=15)),
-        "showlegend": False,
-        "margin": dict(t=70, b=50, l=140, r=80),
-        "height": 420,
-    }))
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(showgrid=False)
-    return fig
+    fig.suptitle("RFM Segment Overview",
+                 fontsize=14, fontweight="bold",
+                 color=TEXT, y=1.01)
+    fig.tight_layout()
+    return save(fig, "10_rfm_segments")
 
 
-def c_ltv_cac(clv_ch: pd.DataFrame) -> go.Figure:
-    # columns: channel_name, ltv_cac_ratio, payback_months
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 11 — LTV:CAC
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_ltv_cac(clv_ch: pd.DataFrame) -> Path:
     ch = clv_ch.dropna(subset=["ltv_cac_ratio"]).sort_values(
         "ltv_cac_ratio", ascending=True
     ).copy()
 
     r_colors = [
-        C["teal"] if v >= 3
-        else (C["amber"] if v >= 1 else C["red"])
+        TEAL if v >= 3 else (AMBER if v >= 1 else RED)
         for v in ch["ltv_cac_ratio"]
     ]
     p_colors = [
-        C["teal"] if v <= 12
-        else (C["amber"] if v <= 24 else C["red"])
+        TEAL if v <= 12 else (AMBER if v <= 24 else RED)
         for v in ch["payback_months"].fillna(999)
     ]
 
-    fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=["LTV:CAC Ratio", "Payback Period (months)"],
-        horizontal_spacing=0.14,
-    )
-    fig.add_trace(go.Bar(
-        y=ch["channel_name"], x=ch["ltv_cac_ratio"],
-        orientation="h", marker_color=r_colors,
-        text=[f"{v:.1f}x" for v in ch["ltv_cac_ratio"]],
-        textposition="outside", textfont=dict(size=11),
-        hovertemplate="<b>%{y}</b><br>%{x:.2f}x<extra></extra>",
-    ), row=1, col=1)
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6),
+                              facecolor="white")
 
-    fig.add_trace(go.Bar(
-        y=ch["channel_name"], x=ch["payback_months"],
-        orientation="h", marker_color=p_colors,
-        text=[f"{v:.0f}m" if not pd.isna(v) else "N/A"
-              for v in ch["payback_months"]],
-        textposition="outside", textfont=dict(size=11),
-        hovertemplate="<b>%{y}</b><br>%{x:.0f}m<extra></extra>",
-    ), row=1, col=2)
+    # Ratio
+    bars = axes[0].barh(ch["channel_name"], ch["ltv_cac_ratio"],
+                         color=r_colors, edgecolor="white")
+    for bar, val in zip(bars, ch["ltv_cac_ratio"]):
+        axes[0].text(bar.get_width() + 0.05,
+                     bar.get_y() + bar.get_height()/2,
+                     f"{val:.1f}x", va="center", fontsize=10,
+                     fontweight="bold")
+    axes[0].axvline(3, color=TEAL, linewidth=1.5,
+                    linestyle="--", label="Healthy (3x)")
+    axes[0].axvline(1, color=RED, linewidth=1.5,
+                    linestyle="--", label="Break-even (1x)")
+    axes[0].legend(fontsize=9)
+    # Shade zones
+    axes[0].axvspan(0, 1, alpha=0.07, color=RED)
+    axes[0].axvspan(1, 3, alpha=0.05, color=AMBER)
+    axes[0].axvspan(3, ch["ltv_cac_ratio"].max()*1.3,
+                    alpha=0.05, color=TEAL)
+    styled_ax(axes[0], "LTV:CAC Ratio by Channel",
+              xlabel="LTV:CAC Ratio")
 
-    for val, label, col in [
-        (3, "Healthy (3x)", C["teal"]),
-        (1, "Break-even",   C["red"]),
-    ]:
-        fig.add_vline(
-            x=val, line_dash="dash",
-            line_color=col, line_width=1.5,
-            annotation_text=label,
-            annotation_font=dict(size=10, color=col),
-            row=1, col=1,
-        )
+    # Payback
+    bars2 = axes[1].barh(ch["channel_name"], ch["payback_months"],
+                          color=p_colors, edgecolor="white")
+    for bar, val in zip(bars2, ch["payback_months"]):
+        if not pd.isna(val):
+            axes[1].text(bar.get_width() + 0.5,
+                         bar.get_y() + bar.get_height()/2,
+                         f"{val:.0f}m", va="center", fontsize=10)
+    styled_ax(axes[1], "Payback Period (months)",
+              xlabel="Months")
 
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>LTV:CAC and Payback Period</b>  "
-                 "<sup>Green ≥ 3x | Amber 1-3x | Red < 1x</sup>",
-            font=dict(size=15)),
-        "showlegend": False,
-        "margin": dict(t=70, b=50, l=140, r=100),
-        "height": 400,
-    }))
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(showgrid=False)
-    return fig
+    fig.tight_layout()
+    return save(fig, "11_ltv_cac")
 
 
-def c_clv_dist(clv: pd.DataFrame) -> go.Figure:
-    # columns: clv, clv_tier
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 12 — CLV DISTRIBUTION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_clv_dist(clv: pd.DataFrame) -> Path:
     cap  = clv["clv"].quantile(0.95)
     data = clv[clv["clv"] <= cap]["clv"]
 
-    fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=["CLV Distribution", "Avg CLV by Tier"],
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6),
+                              facecolor="white")
+
+    # Histogram
+    axes[0].hist(data, bins=60, color=PURPLE2,
+                  edgecolor="white", linewidth=0.3, alpha=0.85)
+    axes[0].axvline(clv["clv"].mean(), color=CORAL,
+                    linewidth=2, linestyle="--",
+                    label=f"Mean R${clv['clv'].mean():,.0f}")
+    axes[0].axvline(clv["clv"].median(), color=TEAL,
+                    linewidth=2, linestyle="--",
+                    label=f"Median R${clv['clv'].median():,.0f}")
+    axes[0].xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"R${v:,.0f}")
     )
-    fig.add_trace(go.Histogram(
-        x=data, nbinsx=60,
-        marker=dict(color=C["purple_mid"],
-                    line=dict(color="white", width=0.3)),
-        opacity=0.85,
-        hovertemplate="CLV: R$%{x:,.0f}<br>"
-                      "Count: %{y:,}<extra></extra>",
-    ), row=1, col=1)
+    axes[0].legend(fontsize=9)
+    styled_ax(axes[0], "CLV Distribution (95th pct cap)",
+              xlabel="CLV (R$)", ylabel="Customers")
 
-    for val, label, col in [
-        (clv["clv"].mean(),   f"Mean R${clv['clv'].mean():,.0f}",
-         C["coral"]),
-        (clv["clv"].median(), f"Med R${clv['clv'].median():,.0f}",
-         C["teal"]),
-    ]:
-        fig.add_vline(x=val, line_dash="dash",
-                      line_color=col, line_width=2,
-                      annotation_text=label,
-                      annotation_font=dict(size=10, color=col),
-                      row=1, col=1)
-
-    tier_order  = ["platinum", "gold", "silver", "bronze", "low"]
-    tier_colors = {
-        "platinum": C["purple"], "gold": C["amber"],
-        "silver":   C["gray"],   "bronze": C["coral"],
-        "low":      C["gray_lite"],
-    }
+    # By tier
     if "clv_tier" in clv.columns:
+        tier_order  = ["platinum", "gold", "silver", "bronze", "low"]
+        tier_colors = {
+            "platinum": PURPLE, "gold": AMBER,
+            "silver":   GRAY,   "bronze": CORAL,
+            "low":      GRAY2,
+        }
         ts = (
             clv.groupby("clv_tier")
             .agg(avg_clv=("clv", "mean"),
@@ -805,83 +883,90 @@ def c_clv_dist(clv: pd.DataFrame) -> go.Figure:
             [t for t in tier_order if t in ts.index]
         ).reset_index()
 
-        fig.add_trace(go.Bar(
-            x=ts["clv_tier"], y=ts["avg_clv"],
-            marker_color=[tier_colors.get(t, C["gray"])
-                          for t in ts["clv_tier"]],
-            text=[f"R${v:,.0f}\nn={c:,}"
-                  for v, c in zip(ts["avg_clv"], ts["count"])],
-            textposition="outside", textfont=dict(size=10),
-            hovertemplate="<b>%{x}</b><br>"
-                          "R$%{y:,.0f}<extra></extra>",
-        ), row=1, col=2)
+        bar_colors = [tier_colors.get(t, GRAY) for t in ts["clv_tier"]]
+        bars = axes[1].bar(ts["clv_tier"], ts["avg_clv"],
+                            color=bar_colors, edgecolor="white")
+        for bar, (_, row) in zip(bars, ts.iterrows()):
+            axes[1].text(
+                bar.get_x() + bar.get_width()/2,
+                bar.get_height() + ts["avg_clv"].max()*0.02,
+                f"R${row['avg_clv']:,.0f}\n({row['count']:,})",
+                ha="center", fontsize=9, color=TEXT
+            )
+        axes[1].yaxis.set_major_formatter(
+            plt.FuncFormatter(lambda v, _: f"R${v:,.0f}")
+        )
+        styled_ax(axes[1], "Avg CLV by Customer Tier",
+                  xlabel="Tier", ylabel="Avg CLV (R$)")
 
-    fig.update_layout(L({
-        "title": dict(text="<b>CLV Distribution</b>",
-                      font=dict(size=15)),
-        "showlegend": False,
-        "margin": dict(t=70, b=50, l=60, r=60),
-        "height": 400,
-    }))
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(showgrid=False)
-    return fig
+    fig.tight_layout()
+    return save(fig, "12_clv_distribution")
 
 
-def c_pareto(clv: pd.DataFrame) -> go.Figure:
-    # columns: total_revenue, clv
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 13 — PARETO CURVE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_pareto(clv: pd.DataFrame) -> Path:
     sc = clv.sort_values("total_revenue", ascending=False).copy()
     sc["cum_rev"]     = sc["total_revenue"].cumsum()
     total             = sc["total_revenue"].sum()
     sc["cum_rev_pct"] = sc["cum_rev"] / total * 100
     sc["cust_pct"]    = np.arange(1, len(sc)+1) / len(sc) * 100
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=sc["cust_pct"], y=sc["cum_rev_pct"],
-        mode="lines",
-        name="Revenue concentration",
-        line=dict(color=C["purple"], width=3),
-        fill="tonexty", fillcolor=C["purple_pale"],
-        hovertemplate="Top %{x:.1f}% → %{y:.1f}%<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=[0, 100], y=[0, 100],
-        mode="lines", name="Perfect equality",
-        line=dict(color=C["gray_lite"], width=1.5, dash="dash"),
-    ))
+    fig, ax = plt.subplots(figsize=(12, 8), facecolor="white")
+
+    ax.fill_between(sc["cust_pct"], sc["cum_rev_pct"],
+                    alpha=0.12, color=PURPLE)
+    ax.plot(sc["cust_pct"], sc["cum_rev_pct"],
+            color=PURPLE, linewidth=3,
+            label="Revenue concentration")
+    ax.plot([0, 100], [0, 100],
+            color=GRAY2, linewidth=1.5,
+            linestyle="--", label="Perfect equality")
+
     for pct in [5, 20, 50]:
         mask = sc["cust_pct"] <= pct
         if mask.any():
             rev = sc[mask]["cum_rev_pct"].max()
-            fig.add_annotation(
-                x=pct, y=rev,
-                text=f"<b>Top {pct}%<br>→ {rev:.0f}%</b>",
-                showarrow=True, arrowhead=2,
-                arrowcolor=C["purple"],
-                ax=35, ay=-30,
-                bgcolor=C["purple_pale"],
-                bordercolor=C["purple"],
-                borderwidth=1, borderpad=6,
-                font=dict(size=10, color=C["purple"]),
+            ax.annotate(
+                f"Top {pct}%\n→ {rev:.0f}%",
+                xy=(pct, rev),
+                xytext=(pct + 6, rev - 10),
+                fontsize=10, fontweight="bold",
+                color=PURPLE,
+                arrowprops=dict(
+                    arrowstyle="->",
+                    color=PURPLE,
+                    lw=1.5,
+                ),
+                bbox=dict(boxstyle="round,pad=0.3",
+                          facecolor=PURPLE4,
+                          edgecolor=PURPLE,
+                          linewidth=1),
             )
-    fig.update_layout(L({
-        "title": dict(text="<b>Pareto / Lorenz Curve</b>",
-                      font=dict(size=15)),
-        "xaxis": dict(title="% of customers",
-                      showgrid=True, gridcolor=C["border"],
-                      ticksuffix="%", range=[0, 100]),
-        "yaxis": dict(title="Cumulative % of revenue",
-                      showgrid=True, gridcolor=C["border"],
-                      ticksuffix="%", range=[0, 100]),
-        "legend": dict(orientation="h", y=-0.14),
-        "margin": dict(t=70, b=80, l=70, r=40),
-        "height": 440,
-    }))
-    return fig
+
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
+    ax.xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"{v:.0f}%")
+    )
+    ax.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"{v:.0f}%")
+    )
+    ax.legend(fontsize=10)
+    styled_ax(ax, "Revenue Concentration — Pareto / Lorenz Curve",
+              xlabel="% of Customers (ranked by revenue)",
+              ylabel="Cumulative % of Revenue")
+    fig.tight_layout()
+    return save(fig, "13_pareto_curve")
 
 
-def c_cohort(cohort: pd.DataFrame) -> go.Figure:
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 14 — COHORT HEATMAP
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_cohort_heatmap(cohort: pd.DataFrame) -> Path:
     c = cohort.copy()
     c.index = c.index.astype(str)
 
@@ -893,48 +978,63 @@ def c_cohort(cohort: pd.DataFrame) -> go.Figure:
     )
     c = c[int_cols].replace(0, np.nan)
 
-    xlabels  = [f"M+{int(col)}" if int(col) > 0 else "M0"
-                for col in int_cols]
-    text_vals = [
-        [f"{v:.1f}%" if not pd.isna(v) else "—" for v in row]
-        for row in c.values
-    ]
+    xlabels = [f"M+{int(col)}" if int(col) > 0 else "M0"
+               for col in int_cols]
 
-    fig = go.Figure(go.Heatmap(
-        z=c.values,
-        x=xlabels,
-        y=c.index.tolist(),
-        colorscale=PURPLE_SCALE,
-        text=text_vals,
-        texttemplate="%{text}",
-        textfont=dict(size=9),
-        zmin=0, zmax=12,
-        showscale=True,
-        colorbar=dict(
-            title=dict(text="Retention %", side="right"),
-            ticksuffix="%", len=0.8,
-        ),
-        hovertemplate="<b>Cohort: %{y}</b><br>"
-                      "<b>Period: %{x}</b><br>"
-                      "%{text}<extra></extra>",
-    ))
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>Cohort Retention Matrix</b>  "
-                 "<sup>% returning each month | "
-                 "Darker = higher retention</sup>",
-            font=dict(size=15)),
-        "xaxis": dict(side="top", showgrid=False,
-                      tickfont=dict(size=10)),
-        "yaxis": dict(showgrid=False, autorange="reversed",
-                      tickfont=dict(size=10)),
-        "margin": dict(t=110, b=20, l=110, r=80),
-        "height": max(380, len(c) * 26 + 130),
-    }))
-    return fig
+    height = max(8, len(c) * 0.38)
+    fig, ax = plt.subplots(figsize=(16, height),
+                            facecolor="white")
+
+    mask = c.isnull()
+    sns.heatmap(
+        c,
+        mask=mask,
+        cmap=PURPLE_CMAP,
+        vmin=0, vmax=12,
+        annot=True,
+        fmt=".1f",
+        annot_kws={"size": 8},
+        linewidths=0.5,
+        linecolor="white",
+        ax=ax,
+        cbar_kws={"label": "Retention %",
+                   "shrink": 0.6},
+        xticklabels=xlabels,
+    )
+
+    # Mark period 0 differently
+    for j, col in enumerate(int_cols):
+        if int(col) == 0:
+            for i in range(len(c)):
+                ax.add_patch(plt.Rectangle(
+                    (j, i), 1, 1,
+                    fill=True,
+                    facecolor=PURPLE4,
+                    edgecolor="white",
+                    linewidth=0.5,
+                    zorder=1,
+                ))
+
+    ax.set_title("Customer Retention Cohort Matrix\n"
+                 "% of each monthly cohort returning in subsequent months",
+                 fontsize=13, fontweight="bold",
+                 color=TEXT, pad=14)
+    ax.set_xlabel("Months since first purchase",
+                  fontsize=10, color=SUBTEXT)
+    ax.set_ylabel("Cohort (first purchase month)",
+                  fontsize=10, color=SUBTEXT)
+    ax.xaxis.tick_top()
+    ax.xaxis.set_label_position("top")
+
+    fig.tight_layout()
+    return save(fig, "14_cohort_heatmap")
 
 
-def c_retention(cohort: pd.DataFrame) -> go.Figure:
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 15 — RETENTION CURVES
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_retention_curves(cohort: pd.DataFrame) -> Path:
     c = cohort.copy()
     c.index = c.index.astype(str)
 
@@ -945,112 +1045,109 @@ def c_retention(cohort: pd.DataFrame) -> go.Figure:
         key=lambda x: int(x)
     )
     periods = [int(col) for col in int_cols]
-    fig     = go.Figure()
 
+    fig, ax = plt.subplots(figsize=(14, 7), facecolor="white")
+
+    # Individual curves
     for idx in c.index:
         vals = [c.loc[idx, col] for col in int_cols]
         pts  = [(p, v) for p, v in zip(periods, vals)
-                if v is not None and not pd.isna(v) and v > 0]
+                if v is not None
+                and not pd.isna(v) and v > 0]
         if len(pts) >= 2:
             px_, py_ = zip(*pts)
-            fig.add_trace(go.Scatter(
-                x=list(px_), y=list(py_),
-                mode="lines",
-                line=dict(color=C["purple_lite"], width=1),
-                showlegend=False, opacity=0.45,
-                hoverinfo="skip",
-            ))
+            ax.plot(list(px_), list(py_),
+                    color=PURPLE3, linewidth=1,
+                    alpha=0.4)
 
+    # Average
     avg_vals = []
     for col in int_cols:
         v = c[col].replace(0, np.nan).dropna()
         avg_vals.append(v.mean() if len(v) > 0 else None)
 
-    fig.add_trace(go.Scatter(
-        x=periods, y=avg_vals,
-        mode="lines+markers", name="Average",
-        line=dict(color=C["purple"], width=3.5),
-        marker=dict(size=8, color=C["purple"],
-                    line=dict(color="white", width=2)),
-        hovertemplate="M+%{x}: %{y:.2f}%<extra></extra>",
-    ))
+    ax.plot(periods, avg_vals,
+            color=PURPLE, linewidth=3.5,
+            marker="o", markersize=8,
+            markerfacecolor=PURPLE,
+            markeredgecolor="white",
+            markeredgewidth=2,
+            label="Average", zorder=5)
 
+    # Annotate
     for p in [1, 3, 6]:
         if p in periods:
             v = avg_vals[periods.index(p)]
             if v is not None:
-                fig.add_annotation(
-                    x=p, y=v,
-                    text=f"<b>M+{p}: {v:.1f}%</b>",
-                    showarrow=True, arrowhead=2,
-                    arrowcolor=C["purple"],
-                    ax=25, ay=-25,
-                    bgcolor=C["purple_pale"],
-                    bordercolor=C["purple"],
-                    borderwidth=1, borderpad=5,
-                    font=dict(size=10, color=C["purple"]),
+                ax.annotate(
+                    f"M+{p}: {v:.1f}%",
+                    (p, v),
+                    xytext=(p + 0.3, v + 0.4),
+                    fontsize=10, fontweight="bold",
+                    color=PURPLE,
+                    bbox=dict(boxstyle="round,pad=0.3",
+                              facecolor=PURPLE4,
+                              edgecolor=PURPLE,
+                              linewidth=1),
                 )
 
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>Retention Curves by Cohort</b>  "
-                 "<sup>Thin = individual | Bold = average</sup>",
-            font=dict(size=15)),
-        "xaxis": dict(title="Months since first purchase",
-                      showgrid=False, tickmode="linear", dtick=1),
-        "yaxis": dict(title="% retained",
-                      showgrid=True, gridcolor=C["border"],
-                      ticksuffix="%"),
-        "legend": dict(orientation="h", y=-0.14),
-        "margin": dict(t=70, b=80, l=60, r=40),
-        "height": 420,
-    }))
-    return fig
+    ax.set_xticks(periods)
+    ax.set_xlabel("Months since first purchase",
+                  fontsize=10, color=SUBTEXT)
+    ax.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"{v:.1f}%")
+    )
+
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color=PURPLE3, linewidth=1,
+               alpha=0.6, label="Individual cohorts"),
+        Line2D([0], [0], color=PURPLE, linewidth=3,
+               label="Average"),
+    ]
+    ax.legend(handles=legend_elements, fontsize=10)
+    styled_ax(ax, "Retention Curves by Cohort",
+              xlabel="Months since first purchase",
+              ylabel="% of Cohort Retained")
+    fig.tight_layout()
+    return save(fig, "15_retention_curves")
 
 
-def c_churn_dist(churn: pd.DataFrame) -> go.Figure:
-    # columns: churn_flag, churn_probability
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 16 — CHURN PROBABILITY DISTRIBUTION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_churn_dist(churn: pd.DataFrame) -> Path:
     active  = churn[churn["churn_flag"] == 0]["churn_probability"]
     churned = churn[churn["churn_flag"] == 1]["churn_probability"]
 
-    fig = go.Figure()
-    for data, name, col in [
-        (active,  f"Active  (n={len(active):,})",  C["teal"]),
-        (churned, f"Churned (n={len(churned):,})", C["red"]),
-    ]:
-        fig.add_trace(go.Histogram(
-            x=data, name=name, nbinsx=50,
-            marker=dict(color=col,
-                        line=dict(color="white", width=0.3)),
-            opacity=0.72,
-            hovertemplate="Prob: %{x:.2f}<br>"
-                          "Count: %{y:,}<extra></extra>",
-        ))
+    fig, ax = plt.subplots(figsize=(13, 6), facecolor="white")
 
-    fig.add_vline(x=0.5, line_dash="dash",
-                  line_color=C["text"], line_width=2,
-                  annotation_text="Threshold (0.5)",
-                  annotation_font=dict(size=10))
+    ax.hist(active, bins=50, color=TEAL, alpha=0.70,
+            edgecolor="white", linewidth=0.3,
+            label=f"Active (n={len(active):,})")
+    ax.hist(churned, bins=50, color=RED, alpha=0.70,
+            edgecolor="white", linewidth=0.3,
+            label=f"Churned (n={len(churned):,})")
+    ax.axvline(0.5, color=TEXT, linewidth=2,
+               linestyle="--",
+               label="Decision threshold (0.5)")
 
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>Churn Probability Distribution</b>  "
-                 "<sup>Clear separation = good model</sup>",
-            font=dict(size=15)),
-        "barmode": "overlay",
-        "xaxis": dict(title="Predicted Churn Probability",
-                      showgrid=False, range=[0, 1]),
-        "yaxis": dict(title="Customers",
-                      showgrid=True, gridcolor=C["border"]),
-        "legend": dict(orientation="h", y=1.12),
-        "margin": dict(t=80, b=60, l=60, r=40),
-        "height": 400,
-    }))
-    return fig
+    ax.set_xlim(0, 1)
+    ax.legend(fontsize=10)
+    styled_ax(ax, "Churn Probability Distribution\n"
+              "Clear separation between Active and Churned = good model",
+              xlabel="Predicted Churn Probability",
+              ylabel="Number of Customers")
+    fig.tight_layout()
+    return save(fig, "16_churn_distribution")
 
 
-def c_churn_tiers(churn: pd.DataFrame) -> go.Figure:
-    # columns: churn_risk_tier, churn_flag
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 17 — CHURN RISK TIERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_churn_tiers(churn: pd.DataFrame) -> Path:
     ts = (
         churn.groupby("churn_risk_tier", observed=True)
         .agg(count=("customer_unique_id", "count"),
@@ -1058,55 +1155,62 @@ def c_churn_tiers(churn: pd.DataFrame) -> go.Figure:
         .reset_index()
     )
     ts = ts.set_index("churn_risk_tier").reindex(
-        [t for t in ["low", "medium", "high"] if t in ts.index]
+        [t for t in ["low", "medium", "high"]
+         if t in ts.index]
     ).reset_index()
 
     tier_colors = {
-        "low": C["teal"], "medium": C["amber"], "high": C["red"]
+        "low": TEAL, "medium": AMBER, "high": RED
     }
+    colors = [tier_colors.get(t, GRAY)
+              for t in ts["churn_risk_tier"]]
 
-    fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=["Count by Risk Tier",
-                         "Actual Churn Rate %"],
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6),
+                              facecolor="white")
+
+    # Count
+    bars1 = axes[0].bar(ts["churn_risk_tier"], ts["count"],
+                         color=colors, edgecolor="white",
+                         linewidth=0.5)
+    for bar, val in zip(bars1, ts["count"]):
+        axes[0].text(
+            bar.get_x() + bar.get_width()/2,
+            bar.get_height() + ts["count"].max()*0.02,
+            f"{val:,}", ha="center",
+            fontsize=11, fontweight="bold"
+        )
+    styled_ax(axes[0], "Customer Count by Churn Risk Tier",
+              xlabel="Risk Tier",
+              ylabel="Customers")
+
+    # Churn rate
+    bars2 = axes[1].bar(ts["churn_risk_tier"],
+                         ts["actual_churn"] * 100,
+                         color=colors, edgecolor="white",
+                         linewidth=0.5)
+    for bar, val in zip(bars2, ts["actual_churn"]):
+        axes[1].text(
+            bar.get_x() + bar.get_width()/2,
+            val*100 + ts["actual_churn"].max()*2,
+            f"{val*100:.1f}%", ha="center",
+            fontsize=11, fontweight="bold"
+        )
+    axes[1].yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"{v:.0f}%")
     )
-    fig.add_trace(go.Bar(
-        x=ts["churn_risk_tier"],
-        y=ts["count"],
-        marker_color=[tier_colors.get(t, C["gray"])
-                      for t in ts["churn_risk_tier"]],
-        text=[f"{v:,}" for v in ts["count"]],
-        textposition="outside", textfont=dict(size=12),
-        hovertemplate="<b>%{x}</b><br>%{y:,}<extra></extra>",
-    ), row=1, col=1)
+    styled_ax(axes[1], "Actual Churn Rate by Risk Tier",
+              xlabel="Risk Tier",
+              ylabel="Churn Rate %")
 
-    fig.add_trace(go.Bar(
-        x=ts["churn_risk_tier"],
-        y=ts["actual_churn"] * 100,
-        marker_color=[tier_colors.get(t, C["gray"])
-                      for t in ts["churn_risk_tier"]],
-        text=[f"{v*100:.1f}%" for v in ts["actual_churn"]],
-        textposition="outside", textfont=dict(size=12),
-        hovertemplate="<b>%{x}</b><br>%{y:.1f}%<extra></extra>",
-    ), row=1, col=2)
-
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>Churn Risk Tier Analysis</b>  "
-                 "<sup>Validates model calibration</sup>",
-            font=dict(size=15)),
-        "showlegend": False,
-        "margin": dict(t=70, b=50, l=60, r=40),
-        "height": 380,
-    }))
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(showgrid=False, row=1, col=2, ticksuffix="%")
-    return fig
+    fig.tight_layout()
+    return save(fig, "17_churn_risk_tiers")
 
 
-def c_churn_rfm(churn: pd.DataFrame) -> go.Figure:
-    # columns: churn_risk_tier, rfm_segment,
-    #          customer_unique_id, total_revenue
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART 18 — CHURN BY RFM SEGMENT
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chart_churn_rfm(churn: pd.DataFrame) -> Path:
     high = churn[churn["churn_risk_tier"] == "high"]
     seg  = (
         high.groupby("rfm_segment")
@@ -1115,419 +1219,183 @@ def c_churn_rfm(churn: pd.DataFrame) -> go.Figure:
         .reset_index()
         .sort_values("count", ascending=True)
     )
-    seg_colors = [SEG_COLORS.get(s, C["gray"])
+    seg_colors = [SEG_COLORS.get(s, GRAY)
                   for s in seg["rfm_segment"]]
 
-    fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=["High-Risk Count by Segment",
-                         "Revenue at Risk (R$)"],
-        horizontal_spacing=0.12,
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6),
+                              facecolor="white")
+
+    # Count
+    bars1 = axes[0].barh(seg["rfm_segment"], seg["count"],
+                          color=seg_colors, edgecolor="white")
+    for bar, val in zip(bars1, seg["count"]):
+        axes[0].text(bar.get_width() + seg["count"].max()*0.01,
+                     bar.get_y() + bar.get_height()/2,
+                     f"{val:,}", va="center", fontsize=10)
+    styled_ax(axes[0], "High-Risk Count by RFM Segment",
+              xlabel="Customers")
+
+    # Revenue at risk
+    bars2 = axes[1].barh(seg["rfm_segment"], seg["rev_at_risk"],
+                          color=seg_colors, edgecolor="white")
+    for bar, val in zip(bars2, seg["rev_at_risk"]):
+        axes[1].text(
+            bar.get_width() + seg["rev_at_risk"].max()*0.01,
+            bar.get_y() + bar.get_height()/2,
+            f"R${val:,.0f}", va="center", fontsize=10
+        )
+    axes[1].xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"R${v:,.0f}")
     )
-    fig.add_trace(go.Bar(
-        y=seg["rfm_segment"], x=seg["count"],
-        orientation="h", marker_color=seg_colors,
-        text=seg["count"], textposition="outside",
-        textfont=dict(size=11),
-        hovertemplate="<b>%{y}</b><br>%{x:,}<extra></extra>",
-    ), row=1, col=1)
+    styled_ax(axes[1], "Revenue at Risk by RFM Segment",
+              xlabel="Revenue (R$)")
 
-    fig.add_trace(go.Bar(
-        y=seg["rfm_segment"], x=seg["rev_at_risk"],
-        orientation="h", marker_color=seg_colors,
-        text=[f"R${v:,.0f}" for v in seg["rev_at_risk"]],
-        textposition="outside", textfont=dict(size=11),
-        hovertemplate="<b>%{y}</b><br>"
-                      "R$%{x:,.0f}<extra></extra>",
-    ), row=1, col=2)
-
-    fig.update_layout(L({
-        "title": dict(
-            text="<b>High-Risk Customers by RFM Segment</b>",
-            font=dict(size=15)),
-        "showlegend": False,
-        "margin": dict(t=70, b=50, l=150, r=120),
-        "height": 380,
-    }))
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(showgrid=False)
-    return fig
+    fig.suptitle("High-Risk Customers by RFM Segment",
+                 fontsize=14, fontweight="bold",
+                 color=TEXT, y=1.01)
+    fig.tight_layout()
+    return save(fig, "18_churn_by_rfm")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# HTML HELPERS
+# COMPILE PDF
 # ─────────────────────────────────────────────────────────────────────────────
 
-def to_html(fig: go.Figure, div_id: str) -> str:
-    return pio.to_html(
-        fig, full_html=False, include_plotlyjs=False,
-        div_id=div_id,
-        config={
-            "displayModeBar": True,
-            "modeBarButtonsToRemove": ["select2d", "lasso2d"],
-            "displaylogo": False,
-            "toImageButtonOptions": {
-                "format": "png", "filename": div_id, "scale": 2,
-            },
-        },
-    )
+def compile_pdf(chart_paths: list, k: dict) -> Path:
+    from fpdf import FPDF
 
+    def s(text: str) -> str:
+        """Strip any character that latin-1 cannot encode."""
+        return text.encode("latin-1", errors="ignore").decode("latin-1")
 
-def kpi(label, value, sub="", color="#534AB7"):
-    return f"""
-<div class="kpi-card">
-  <div class="kpi-label">{label}</div>
-  <div class="kpi-value" style="color:{color}">{value}</div>
-  <div class="kpi-sub">{sub}</div>
-</div>"""
+    print("\nCompiling PDF...")
 
+    class PDF(FPDF):
+        def header(self):
+            self.set_fill_color(83, 74, 183)
+            self.rect(0, 0, 210, 18, "F")
+            self.set_font("Helvetica", "B", 11)
+            self.set_text_color(255, 255, 255)
+            self.set_y(4)
+            self.cell(0, 10,
+                s("E-Commerce Revenue Intelligence Dashboard"),
+                align="C")
+            self.set_text_color(0, 0, 0)
 
-def sec(title, sub=""):
-    s = f'<div class="section-sub">{sub}</div>' if sub else ""
-    return f"""
-<div class="section-header">
-  <div class="section-title">{title}</div>{s}
-</div>"""
+        def footer(self):
+            self.set_y(-12)
+            self.set_font("Helvetica", "", 8)
+            self.set_text_color(136, 135, 128)
+            self.cell(0, 10,
+                s("Page " + str(self.page_no()) +
+                  " - Olist Brazilian E-Commerce - "
+                  "Python, pandas, scikit-learn, matplotlib"),
+                align="C")
+            self.set_text_color(0, 0, 0)
 
+    pdf = PDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_margins(10, 20, 10)
 
-def ins(icon, title, body, color="#534AB7"):
-    return f"""
-<div class="insight-card" style="border-left:4px solid {color}">
-  <div class="insight-title" style="color:{color}">{icon} {title}</div>
-  <div class="insight-body">{body}</div>
-</div>"""
+    # Cover page
+    pdf.add_page()
+    pdf.set_fill_color(83, 74, 183)
+    pdf.rect(0, 0, 210, 297, "F")
 
+    pdf.set_font("Helvetica", "B", 28)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_y(60)
+    pdf.cell(0, 14, s("E-Commerce Revenue"), align="C", ln=True)
+    pdf.cell(0, 14, s("Intelligence Dashboard"), align="C", ln=True)
 
-def wrap(h):
-    return f'<div class="chart-card">{h}</div>'
+    pdf.set_font("Helvetica", "", 14)
+    pdf.set_text_color(175, 169, 236)
+    pdf.ln(8)
+    pdf.cell(0, 10, s("Olist Brazilian E-Commerce | 2016-2018"),
+             align="C", ln=True)
+    pdf.cell(0, 10, s("End-to-End Analytics Pipeline"),
+             align="C", ln=True)
 
+    pdf.ln(16)
+    kpi_items = [
+        ("Total Revenue",    s(f"R${k['total_revenue']:,.0f}")),
+        ("Total Orders",     s(f"{k['total_orders']:,}")),
+        ("Avg Order Value",  s(f"R${k['aov']:,.2f}")),
+        ("Gross Margin",     s(f"{k['gross_margin']:.1f}%")),
+        ("Revenue Leakage",  s(f"R${k['total_leak']:,.0f}")),
+        ("Churn Rate",       s(f"{k['churn_rate']:.1f}%")),
+    ]
+    col_w   = 60
+    x_start = (210 - col_w * 3) / 2
 
-def g2(a, b):
-    return (f'<div class="grid-2">'
-            f'<div class="chart-card">{a}</div>'
-            f'<div class="chart-card">{b}</div>'
-            f'</div>')
+    for i, (label, value) in enumerate(kpi_items):
+        col = i % 3
+        row = i // 3
+        x   = x_start + col * col_w
+        y   = 170 + row * 32
 
+        pdf.set_fill_color(255, 255, 255)
+        pdf.set_draw_color(175, 169, 236)
+        pdf.set_line_width(0.3)
+        pdf.rect(x, y, col_w - 4, 28, "FD")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# BUILD HTML
-# ─────────────────────────────────────────────────────────────────────────────
+        pdf.set_xy(x, y + 4)
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.set_text_color(83, 74, 183)
+        pdf.cell(col_w - 4, 8, s(value), align="C", ln=True)
 
-def build_html(d: dict, k: dict) -> str:
-    print("\nBuilding charts...")
+        pdf.set_xy(x, y + 14)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(89, 90, 90)
+        pdf.cell(col_w - 4, 6, s(label), align="C")
 
-    ch = {
-        "monthly":   to_html(c_monthly(d["monthly"]),            "monthly"),
-        "mom":       to_html(c_mom(d["monthly"]),                 "mom"),
-        "waterfall": to_html(c_waterfall(k),                      "waterfall"),
-        "channel":   to_html(c_channel(d["del"]),                 "channel"),
-        "leak_bar":  to_html(c_leakage_bar(
-                         d["leakage"], k["total_revenue"]),        "leak_bar"),
-        "leak_sun":  to_html(c_leakage_sun(
-                         d["leakage"], k["total_revenue"]),        "leak_sun"),
-        "top_cat":   to_html(c_top_cat(d["categories"]),          "top_cat"),
-        "quadrant":  to_html(c_quadrant(d["categories"]),         "quadrant"),
-        "regions":   to_html(c_regions(d["regions"]),             "regions"),
-        "rfm":       to_html(c_rfm(d["clv_seg"]),                 "rfm"),
-        "ltv_cac":   to_html(c_ltv_cac(d["clv_ch"]),              "ltv_cac"),
-        "clv_dist":  to_html(c_clv_dist(d["clv"]),                "clv_dist"),
-        "pareto":    to_html(c_pareto(d["clv"]),                   "pareto"),
-        "cohort":    to_html(c_cohort(d["cohort"]),               "cohort"),
-        "retention": to_html(c_retention(d["cohort"]),            "retention"),
-        "ch_dist":   to_html(c_churn_dist(d["churn"]),            "ch_dist"),
-        "ch_tiers":  to_html(c_churn_tiers(d["churn"]),           "ch_tiers"),
-        "ch_rfm":    to_html(c_churn_rfm(d["churn"]),             "ch_rfm"),
-    }
-    print(f"  {len(ch)} charts built")
+    pdf.set_xy(0, 265)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(175, 169, 236)
+    pdf.cell(0, 8,
+        s("Built with Python, pandas, scikit-learn, "
+          "matplotlib, seaborn"),
+        align="C")
 
-    # High-risk table
-    hr = (
-        d["churn"][d["churn"]["churn_risk_tier"] == "high"]
-        .sort_values("churn_probability", ascending=False)
-        .head(30)
-    )
-    rows = ""
-    for _, row in hr.iterrows():
-        prob = row["churn_probability"]
-        pc   = C["red"] if prob >= 0.8 else C["coral"]
-        seg  = str(row.get("rfm_segment", "")).replace("_", "-")
-        rows += f"""
-<tr>
-  <td><code>{str(row['customer_unique_id'])[:22]}...</code></td>
-  <td><span class="badge badge-{seg}">{row.get('rfm_segment','')}</span></td>
-  <td>R${row['total_revenue']:,.2f}</td>
-  <td>R${row['clv']:,.2f}</td>
-  <td style="color:{pc};font-weight:700">{prob:.4f}</td>
-  <td>{row.get('channel_name','')}</td>
-  <td>{row.get('state','')}</td>
-</tr>"""
+    # Chart pages
+    sections = [
+        ("Executive Summary",        [0]),
+        ("Revenue Trends",            [1, 2, 3]),
+        ("Channel Performance",       [4]),
+        ("Revenue Leakage",           [5]),
+        ("Product Performance",       [6, 7]),
+        ("Regional Performance",      [8]),
+        ("Customer Segmentation",     [9]),
+        ("LTV CAC Analysis",          [10]),
+        ("CLV Distribution",          [11]),
+        ("Pareto Curve",              [12]),
+        ("Cohort Retention Matrix",   [13]),
+        ("Retention Curves",          [14]),
+        ("Churn Distribution",        [15]),
+        ("Churn Risk Tiers",          [16]),
+        ("Churn by Segment",          [17]),
+    ]
 
-    css = f"""
-*{{box-sizing:border-box;margin:0;padding:0}}
-body{{font-family:'Segoe UI',Arial,sans-serif;
-      background:{C["bg"]};color:{C["text"]};
-      font-size:14px;line-height:1.6}}
-.header{{background:linear-gradient(135deg,#2D2580,
-  {C["purple"]},{C["purple_mid"]});
-  padding:32px 40px;color:white;
-  position:relative;overflow:hidden}}
-.header::before{{content:'';position:absolute;
-  top:-70px;right:-70px;width:280px;height:280px;
-  background:rgba(255,255,255,0.06);border-radius:50%}}
-.header h1{{font-size:26px;font-weight:700;margin-bottom:6px}}
-.header .sub{{font-size:13px;opacity:0.75;margin-bottom:16px}}
-.badges{{display:flex;gap:10px;flex-wrap:wrap}}
-.badge-pill{{background:rgba(255,255,255,0.18);
-  border:1px solid rgba(255,255,255,0.30);
-  border-radius:20px;padding:4px 14px;
-  font-size:12px;font-weight:500}}
-.nav{{background:white;
-  border-bottom:1px solid {C["border"]};
-  padding:0 40px;position:sticky;top:0;z-index:100;
-  display:flex;gap:0;
-  box-shadow:0 2px 8px rgba(0,0,0,0.06)}}
-.nav a{{display:inline-block;padding:14px 18px;
-  text-decoration:none;color:{C["subtext"]};
-  font-size:13px;font-weight:500;
-  border-bottom:3px solid transparent;
-  transition:all 0.2s}}
-.nav a:hover{{color:{C["purple"]};
-  border-bottom-color:{C["purple"]};
-  background:{C["purple_pale"]}}}
-.container{{max-width:1380px;margin:0 auto;
-  padding:32px 24px 60px 24px}}
-.section-header{{margin:40px 0 18px 0;
-  padding-bottom:12px;
-  border-bottom:2px solid {C["border"]}}}
-.section-title{{font-size:20px;font-weight:700;
-  display:flex;align-items:center;gap:10px}}
-.section-title::before{{content:'';display:inline-block;
-  width:5px;height:22px;
-  background:{C["purple"]};border-radius:3px}}
-.section-sub{{font-size:13px;color:{C["subtext"]};
-  margin-top:4px;padding-left:15px}}
-.kpi-row{{display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(155px,1fr));
-  gap:14px;margin-bottom:20px}}
-.kpi-card{{background:white;border-radius:12px;
-  padding:18px 20px;
-  box-shadow:0 1px 4px rgba(83,74,183,0.08),
-             0 0 0 1px {C["border"]};
-  transition:box-shadow 0.2s}}
-.kpi-card:hover{{box-shadow:0 4px 16px rgba(83,74,183,0.14),
-  0 0 0 1px {C["purple_lite"]}}}
-.kpi-label{{font-size:11px;font-weight:600;
-  color:{C["subtext"]};text-transform:uppercase;
-  letter-spacing:0.5px;margin-bottom:6px}}
-.kpi-value{{font-size:25px;font-weight:700;
-  line-height:1.1;margin-bottom:4px}}
-.kpi-sub{{font-size:11px;color:{C["gray"]}}}
-.chart-card{{background:white;border-radius:12px;
-  padding:8px;
-  box-shadow:0 1px 4px rgba(83,74,183,0.08),
-             0 0 0 1px {C["border"]};
-  margin-bottom:20px}}
-.grid-2{{display:grid;grid-template-columns:1fr 1fr;
-  gap:20px;margin-bottom:20px}}
-.insight-row{{display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
-  gap:14px;margin-bottom:24px}}
-.insight-card{{background:white;border-radius:10px;
-  padding:16px 18px;
-  box-shadow:0 1px 4px rgba(0,0,0,0.06),
-             0 0 0 1px {C["border"]}}}
-.insight-title{{font-size:13px;font-weight:700;margin-bottom:6px}}
-.insight-body{{font-size:12px;color:{C["subtext"]};line-height:1.5}}
-.table-wrap{{background:white;border-radius:12px;
-  padding:20px;
-  box-shadow:0 1px 4px rgba(83,74,183,0.08),
-             0 0 0 1px {C["border"]};
-  margin-bottom:20px;overflow-x:auto}}
-.table-wrap h3{{font-size:15px;font-weight:700;
-  margin-bottom:14px;padding-left:10px;
-  border-left:4px solid {C["red"]}}}
-table{{width:100%;border-collapse:collapse;font-size:12px}}
-th{{background:{C["red"]};color:white;padding:10px 12px;
-  text-align:left;font-weight:600;font-size:11px;
-  text-transform:uppercase;letter-spacing:0.3px}}
-td{{padding:9px 12px;border-bottom:1px solid {C["border"]};
-  vertical-align:middle}}
-tr:nth-child(even) td{{background:#FFF8F8}}
-tr:hover td{{background:#FFF0F0}}
-code{{font-size:10px;background:{C["bg"]};
-  padding:2px 5px;border-radius:4px;color:{C["purple"]}}}
-.badge{{display:inline-block;padding:2px 10px;
-  border-radius:12px;font-size:10px;font-weight:600;
-  text-transform:uppercase;letter-spacing:0.3px}}
-.badge-champions{{background:{C["purple_pale"]};color:{C["purple"]}}}
-.badge-loyal{{background:{C["purple_pale"]};color:{C["purple_mid"]}}}
-.badge-potential-loyal{{background:{C["purple_pale"]};color:{C["purple_lite"]}}}
-.badge-need-attention{{background:#FAEEDA;color:{C["amber"]}}}
-.badge-at-risk{{background:#FAECE7;color:{C["coral"]}}}
-.badge-lost{{background:{C["red_lite"]};color:{C["red"]}}}
-.badge-unknown{{background:#F1EFE8;color:{C["gray"]}}}
-.footer{{background:{C["text"]};
-  color:rgba(255,255,255,0.55);
-  text-align:center;padding:24px;
-  font-size:12px;margin-top:60px}}
-@media(max-width:900px){{
-  .grid-2{{grid-template-columns:1fr}}
-  .nav{{overflow-x:auto}}
-  .header,.container{{padding-left:16px;padding-right:16px}}
-}}"""
+    for section_name, indices in sections:
+        for i, idx in enumerate(indices):
+            if idx < len(chart_paths):
+                path = chart_paths[idx]
+                if path.exists():
+                    pdf.add_page()
+                    pdf.set_fill_color(248, 247, 255)
+                    pdf.rect(0, 18, 210, 10, "F")
+                    pdf.set_xy(10, 19)
+                    pdf.set_font("Helvetica", "B", 11)
+                    pdf.set_text_color(83, 74, 183)
+                    pdf.cell(0, 8, s(section_name))
+                    pdf.set_text_color(0, 0, 0)
+                    pdf.image(str(path), x=10, y=30, w=190)
 
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>E-Commerce Analytics Dashboard</title>
-<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-<style>{css}</style>
-</head>
-<body>
-
-<div class="header">
-  <h1>E-Commerce Revenue Intelligence Dashboard</h1>
-  <div class="sub">Olist Brazilian E-Commerce &nbsp;|&nbsp;
-    2016–2018 &nbsp;|&nbsp; End-to-End Analytics Pipeline</div>
-  <div class="badges">
-    <span class="badge-pill">99,441 Orders</span>
-    <span class="badge-pill">R${k["total_revenue"]:,.0f} Revenue</span>
-    <span class="badge-pill">{k["total_customers"]:,} Customers</span>
-    <span class="badge-pill">9 Phases of Analysis</span>
-    <span class="badge-pill">Churn ROC-AUC 0.80</span>
-    <span class="badge-pill">R${k["total_leak"]:,.0f} Leakage Found</span>
-  </div>
-</div>
-
-<nav class="nav">
-  <a href="#exec">Executive Summary</a>
-  <a href="#trends">Revenue Trends</a>
-  <a href="#leakage">Leakage</a>
-  <a href="#products">Products</a>
-  <a href="#customers">Customers & CLV</a>
-  <a href="#cohort">Cohort Retention</a>
-  <a href="#churn">Churn Risk</a>
-</nav>
-
-<div class="container">
-
-<div id="exec">
-{sec("Executive Summary",
-     "Top-level KPIs and business health at a glance")}
-<div class="kpi-row">
-  {kpi("Total Revenue",    f"R${k['total_revenue']:,.0f}",
-       "Delivered orders", C["purple"])}
-  {kpi("Total Orders",     f"{k['total_orders']:,}",
-       "Delivered",        C["purple"])}
-  {kpi("Avg Order Value",  f"R${k['aov']:,.2f}",
-       "Per order",        C["purple"])}
-  {kpi("Gross Margin",     f"{k['gross_margin']:.1f}%",
-       "After freight",    C["teal"])}
-  {kpi("Total Customers",  f"{k['total_customers']:,}",
-       "Unique buyers",    C["teal"])}
-  {kpi("Repeat Rate",      f"{k['repeat_rate']:.1f}%",
-       "2+ orders",        C["teal"])}
-</div>
-<div class="kpi-row">
-  {kpi("Revenue Leakage",     f"R${k['total_leak']:,.0f}",
-       f"{k['leak_pct']:.1f}% of revenue",   C["amber"])}
-  {kpi("Discount Rate",       f"{k['disc_rate']:.1f}%",
-       f"R${k['total_disc']:,.0f} given",     C["coral"])}
-  {kpi("Late Deliveries",     f"{k['late_rate']:.1f}%",
-       f"{k['late_count']:,} orders",         C["coral"])}
-  {kpi("Churn Rate",          f"{k['churn_rate']:.1f}%",
-       "180+ days inactive",                  C["red"])}
-  {kpi("High-Risk Customers", f"{k['high_risk_n']:,}",
-       "Likely to churn",                     C["red"])}
-  {kpi("Revenue at Risk",     f"R${k['rev_at_risk']:,.0f}",
-       "High-risk segment",                   C["red"])}
-</div>
-<div class="insight-row">
-  {ins("💡","Revenue Leakage",
-    f"R${k['total_leak']:,.0f} ({k['leak_pct']:.1f}%) across 6 sources. "
-    f"Excessive discounts = 54% of all leakage.",C["amber"])}
-  {ins("💡","Churn Intelligence",
-    f"{k['high_risk_n']:,} high-risk customers. "
-    f"R${k['rev_at_risk']:,.0f} at stake. "
-    f"Top predictor: delivery experience.",C["red"])}
-  {ins("💡","Customer Value",
-    f"Avg CLV R${k['avg_clv']:,.0f}. "
-    f"Organic Search = best LTV:CAC. "
-    f"Top 20% customers → ~70% of revenue.",C["purple"])}
-  {ins("💡","Retention Signal",
-    f"M+1 retention ~4-5%. "
-    f"Review score drops 2.02 pts on late delivery — "
-    f"strongest churn signal.",C["teal"])}
-</div>
-{g2(ch["monthly"], ch["channel"])}
-</div>
-
-<div id="trends">
-{sec("Revenue Trends",
-     "Monthly growth, waterfall, and channel split")}
-{wrap(ch["mom"])}
-{g2(ch["waterfall"], ch["channel"])}
-</div>
-
-<div id="leakage">
-{sec("Revenue Leakage Analysis",
-     f"R${k['total_leak']:,.0f} ({k['leak_pct']:.2f}%) recoverable")}
-{g2(ch["leak_bar"], ch["leak_sun"])}
-</div>
-
-<div id="products">
-{sec("Product Performance",
-     "Category revenue, margin quadrant, regional breakdown")}
-{g2(ch["top_cat"], ch["quadrant"])}
-{wrap(ch["regions"])}
-</div>
-
-<div id="customers">
-{sec("Customer Segmentation & Lifetime Value",
-     "RFM, CLV distribution, LTV:CAC, Pareto curve")}
-{wrap(ch["rfm"])}
-{g2(ch["ltv_cac"], ch["clv_dist"])}
-{wrap(ch["pareto"])}
-</div>
-
-<div id="cohort">
-{sec("Cohort Retention Analysis",
-     "% of each monthly cohort returning in subsequent months")}
-{wrap(ch["cohort"])}
-{wrap(ch["retention"])}
-</div>
-
-<div id="churn">
-{sec("Churn Risk Intelligence",
-     f"Gradient Boosting | ROC-AUC 0.8019 | "
-     f"{k['high_risk_n']:,} high-risk customers")}
-{g2(ch["ch_dist"], ch["ch_tiers"])}
-{wrap(ch["ch_rfm"])}
-<div class="table-wrap">
-  <h3>High-Risk Customers — Immediate Action Required
-      (Top 30 by Churn Probability)</h3>
-  <table>
-    <thead><tr>
-      <th>Customer ID</th><th>Segment</th>
-      <th>Lifetime Revenue</th><th>CLV</th>
-      <th>Churn Probability</th><th>Channel</th><th>State</th>
-    </tr></thead>
-    <tbody>{rows}</tbody>
-  </table>
-</div>
-</div>
-
-</div>
-<div class="footer">
-  E-Commerce Revenue Intelligence Dashboard &nbsp;|&nbsp;
-  Python · Plotly · pandas · scikit-learn &nbsp;|&nbsp;
-  Olist Brazilian E-Commerce | 99,441 Orders | 2016–2018
-</div>
-</body></html>"""
-
-    return html
+    out = REPORTS / "dashboard.pdf"
+    pdf.output(str(out))
+    size_mb = out.stat().st_size / 1024 / 1024
+    print(f"  PDF saved -> {out}  ({size_mb:.1f} MB)")
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1539,20 +1407,38 @@ def main():
     print("  PHASE 9 — DASHBOARD GENERATION")
     print("="*60)
 
-    d    = load_data()
-    k    = compute_kpis(d)
-    html = build_html(d, k)
+    d = load_data()
+    k = compute_kpis(d)
 
-    out     = REPORTS / "dashboard.html"
-    out.write_text(html, encoding="utf-8")
-    size_mb = out.stat().st_size / 1024 / 1024
+    print("\nGenerating charts...")
+    paths = [
+        chart_kpi_summary(k),
+        chart_monthly_revenue(d["monthly"]),
+        chart_mom_growth(d["monthly"]),
+        chart_waterfall(k),
+        chart_channel(d["del"]),
+        chart_leakage_bar(d["leakage"], k["total_revenue"]),
+        chart_top_categories(d["categories"]),
+        chart_quadrant(d["categories"]),
+        chart_regions(d["regions"]),
+        chart_rfm(d["clv_seg"]),
+        chart_ltv_cac(d["clv_ch"]),
+        chart_clv_dist(d["clv"]),
+        chart_pareto(d["clv"]),
+        chart_cohort_heatmap(d["cohort"]),
+        chart_retention_curves(d["cohort"]),
+        chart_churn_dist(d["churn"]),
+        chart_churn_tiers(d["churn"]),
+        chart_churn_rfm(d["churn"]),
+    ]
+
+    pdf_path = compile_pdf(paths, k)
 
     print(f"\n{'='*60}")
-    print(f"  Saved → {out}")
-    print(f"  Size:   {size_mb:.1f} MB")
-    print(f"  Charts: 18 interactive")
-    print(f"\n  Open in Chrome or Firefox:")
-    print(f"  {out.resolve()}")
+    print(f"  Done.")
+    print(f"  Charts: {len(paths)} PNGs in reports/charts/")
+    print(f"  PDF:    {pdf_path}")
+    print(f"\n  Open: reports\\dashboard.pdf")
     print(f"{'='*60}\n")
 
 
