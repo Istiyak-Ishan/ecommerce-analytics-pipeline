@@ -16,3 +16,6 @@ __pycache__/
 
 # Power BI backups
 *.pbix.backup
+
+*.html
+reports/dashboard.html
